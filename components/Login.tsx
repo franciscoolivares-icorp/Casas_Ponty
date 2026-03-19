@@ -1,3 +1,4 @@
+import logoPonty from '../Recursos/casas_ponty.png';
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import bcrypt from 'bcryptjs';
@@ -118,11 +119,10 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         <div className="text-center mb-12">
           {/* REEMPLAZO DEL ÍCONO GENÉRICO POR TU LOGO REAL */}
           <img 
-            src="../Recursos/casas_ponty.png" 
+            src={logoPonty} 
             alt="Logo Casas Ponty" 
             className="w-64 mx-auto mb-6" 
           />
-          
           {/* ELIMINACIÓN DEL H1 REDUNDANTE Y AJUSTE DEL SUBTÍTULO */}
           <p className="text-slate-500 dark:text-slate-400 mt-2 font-medium">
             SGII - Sistema de Gestión de Inventario Inmobiliario
