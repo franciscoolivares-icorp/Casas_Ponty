@@ -143,7 +143,7 @@ function App() {
               {/* AQUÍ AGREGAMOS TU LOGO */}
               <button onClick={() => setActiveTab('home')} className="flex-shrink-0 flex items-center hover:opacity-80 transition-opacity focus:outline-none mr-8">
                 <img 
-                  src="./Recursos/casas ponty.png" 
+                  src="./Recursos/casas_ponty.png" 
                   alt="Casas Ponty Logo" 
                   className="h-10 w-auto object-contain" 
                 />

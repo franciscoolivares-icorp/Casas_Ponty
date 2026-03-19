@@ -118,7 +118,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         <div className="text-center mb-12">
           {/* REEMPLAZO DEL ÍCONO GENÉRICO POR TU LOGO REAL */}
           <img 
-            src="../Recursos/casas ponty.png" 
+            src="../Recursos/casas_ponty.png" 
             alt="Logo Casas Ponty" 
             className="w-64 mx-auto mb-6" 
           />
