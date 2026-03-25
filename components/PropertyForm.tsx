@@ -1,604 +1,408 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Propiedad, DTUAvaluo } from '../types';
-import { Save, RefreshCw, AlertCircle, CheckCircle2, ArrowLeft, Calculator, Edit2, X, Check, Clock } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Propiedad } from '../types';
+import { supabase } from '../supabaseClient';
+import { 
+  Save, X, Home, DollarSign, MapPin, User, 
+  FileText, CalendarClock, Layers, AlertCircle, 
+  FolderOpen, UploadCloud, CheckCircle2 
+} from 'lucide-react';
 
 interface PropertyFormProps {
-  initialData?: Partial<Propiedad>;
+  initialData?: Propiedad;
   catalogs: { [key: string]: string[] };
-  modelAssignments?: { [group: string]: string[] };
-  statusAssignments?: { [group: string]: string[] };
-  metodoCompraAssignments?: { [group: string]: string[] };
-  onSubmit: (data: Partial<Propiedad>) => void;
+  modelAssignments: { [group: string]: string[] };
+  statusAssignments: { [group: string]: string[] };
+  metodoCompraAssignments: { [group: string]: string[] };
+  onSubmit: (property: Partial<Propiedad>) => void;
   onCancel: () => void;
-  isEditing?: boolean;
+  isEditing: boolean;
 }
-
-// --- SMART FIELD COMPONENT FOR INLINE EDITING ---
-interface SmartFieldProps {
-    label: string;
-    name: keyof Propiedad;
-    value: any;
-    type?: 'text' | 'number' | 'select' | 'date' | 'checkbox' | 'currency';
-    options?: string[];
-    isEditingMode: boolean;
-    readOnly?: boolean;
-    onChange: (name: string, val: any) => void; 
-    onSave?: (name: string, val: any) => void; 
-    prefix?: React.ReactNode;
-    suffix?: React.ReactNode;
-    placeholder?: string;
-    helperText?: string;
-    transformDisplay?: (val: any) => string | React.ReactNode; 
-}
-
-const SmartField: React.FC<SmartFieldProps> = ({
-    label, name, value, type = 'text', options = [], isEditingMode, readOnly, 
-    onChange, onSave, prefix, suffix, placeholder, helperText, transformDisplay
-}) => {
-    const [isActive, setIsActive] = useState(false);
-    const [tempValue, setTempValue] = useState(value);
-    const inputRef = useRef<HTMLInputElement | HTMLSelectElement>(null);
-
-    useEffect(() => {
-        setTempValue(value);
-    }, [value]);
-
-    useEffect(() => {
-        if (isActive && inputRef.current) {
-            inputRef.current.focus();
-        }
-    }, [isActive]);
-
-    const handleCancel = () => {
-        setTempValue(value);
-        setIsActive(false);
-    };
-
-    const handleConfirm = (e?: React.FormEvent) => {
-        e?.preventDefault();
-        if (onSave) {
-            onSave(name as string, tempValue);
-        }
-        setIsActive(false);
-    };
-
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const val = type === 'checkbox' ? (e.target as HTMLInputElement).checked : e.target.value;
-        let processed = type === 'number' || type === 'currency' ? (val === '' ? 0 : Number(val)) : val;
-        
-        if ((type === 'text' || type === undefined) && typeof processed === 'string') {
-            processed = processed.toUpperCase();
-        }
-
-        if (isEditingMode) {
-            setTempValue(processed);
-        } else {
-            onChange(name as string, processed);
-        }
-    };
-
-    // 1. Create Mode or ReadOnly
-    if (!isEditingMode) {
-        return (
-            <div className={type === 'checkbox' ? 'flex items-center mt-6' : ''}>
-                {type !== 'checkbox' && (
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">{label}</label>
-                )}
-                
-                {type === 'checkbox' ? (
-                     <>
-                        <input 
-                            type="checkbox" 
-                            checked={!!value} 
-                            disabled={readOnly}
-                            onChange={(e) => onChange(name as string, e.target.checked)}
-                            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-600 dark:bg-slate-700 rounded disabled:bg-slate-100 dark:disabled:bg-slate-800 transition-colors" 
-                        />
-                        <label className="ml-2 block text-sm text-slate-900 dark:text-slate-200">{label}</label>
-                     </>
-                ) : type === 'select' ? (
-                    <select 
-                        value={value || ''} 
-                        onChange={handleChange}
-                        disabled={readOnly}
-                        className="mt-1 block w-full rounded-md border-slate-300 dark:border-slate-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border disabled:bg-slate-100 dark:disabled:bg-slate-800/50 disabled:text-slate-500 dark:disabled:text-slate-400 bg-white dark:bg-slate-800 text-slate-900 dark:text-white transition-colors"
-                    >
-                        <option value="">Seleccione...</option>
-                        {options.map(v => <option key={v} value={v}>{v}</option>)}
-                    </select>
-                ) : (
-                    <div className="relative rounded-md shadow-sm">
-                        {prefix && (
-                            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                                {prefix}
-                            </div>
-                        )}
-                        <input
-                            type={type === 'currency' ? 'number' : type}
-                            value={value === undefined || value === null ? '' : value}
-                            onChange={handleChange}
-                            readOnly={readOnly}
-                            placeholder={placeholder}
-                            className={`block w-full rounded-md border-slate-300 dark:border-slate-600 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border disabled:bg-slate-100 dark:disabled:bg-slate-800/50 disabled:text-slate-500 dark:disabled:text-slate-400 bg-white dark:bg-slate-800 text-slate-900 dark:text-white transition-colors ${prefix ? 'pl-7' : ''} ${suffix ? 'pr-12' : ''} ${readOnly ? 'bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400' : ''}`}
-                        />
-                        {suffix && (
-                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
-                                {suffix}
-                            </div>
-                        )}
-                    </div>
-                )}
-                {helperText && <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{helperText}</p>}
-            </div>
-        );
-    }
-
-    // 2. Edit Mode
-    let displayValue: React.ReactNode = value;
-    if (transformDisplay) {
-        displayValue = transformDisplay(value);
-    } else if (type === 'currency') {
-        displayValue = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(value || 0);
-    } else if (type === 'checkbox') {
-        displayValue = value ? 'Sí' : 'No';
-    } else if (type === 'date' && value) {
-        const parts = String(value).split('-');
-        if (parts.length === 3) {
-             const [year, month, day] = parts;
-             displayValue = `${day}-${month}-${year}`;
-        }
-    } else if (!value && value !== 0) {
-        displayValue = '-';
-    }
-
-    if (isActive && !readOnly) {
-        return (
-            <div className={`relative ${type === 'checkbox' ? 'mt-6' : ''}`}>
-                 {type !== 'checkbox' && (
-                    <label className="block text-sm font-medium text-indigo-700 dark:text-indigo-400 mb-1">{label}</label>
-                )}
-                <div className="flex items-center gap-1 animate-in zoom-in-95 duration-100">
-                     {type === 'select' ? (
-                        <select 
-                            ref={inputRef as any}
-                            value={tempValue || ''} 
-                            onChange={handleChange}
-                            className="block w-full rounded-md border-indigo-300 dark:border-indigo-600 ring-2 ring-indigo-100 dark:ring-indigo-900 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-                        >
-                            <option value="">Seleccione...</option>
-                            {options.map(v => <option key={v} value={v}>{v}</option>)}
-                        </select>
-                     ) : type === 'checkbox' ? (
-                        <div className="flex items-center h-9">
-                             <input 
-                                ref={inputRef as any}
-                                type="checkbox" 
-                                checked={!!tempValue} 
-                                onChange={(e) => setTempValue(e.target.checked)}
-                                className="h-5 w-5 text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-600 dark:bg-slate-700 rounded" 
-                            />
-                            <label className="ml-2 text-sm font-medium text-slate-900 dark:text-slate-200">{label}</label>
-                        </div>
-                     ) : (
-                        <div className="relative w-full">
-                            {prefix && <span className="absolute left-2 top-2 text-slate-400 text-sm">{prefix}</span>}
-                            <input
-                                ref={inputRef as any}
-                                type={type === 'currency' ? 'number' : type}
-                                value={tempValue === undefined ? '' : tempValue}
-                                onChange={handleChange}
-                                className={`block w-full rounded-md border-indigo-300 dark:border-indigo-600 ring-2 ring-indigo-100 dark:ring-indigo-900 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white dark:bg-slate-800 text-slate-900 dark:text-white ${prefix ? 'pl-6' : ''}`}
-                            />
-                        </div>
-                     )}
-                     
-                     <button 
-                        type="button"
-                        onClick={() => handleConfirm()}
-                        className="p-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-md hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors focus:outline-none focus:ring-2 focus:ring-green-500"
-                        title="Guardar cambios"
-                     >
-                        <Check className="w-4 h-4" />
-                     </button>
-                     <button 
-                        type="button"
-                        onClick={handleCancel}
-                        className="p-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-md hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500"
-                        title="Cancelar"
-                     >
-                        <X className="w-4 h-4" />
-                     </button>
-                </div>
-            </div>
-        );
-    }
-
-    return (
-        <div 
-            className={`group relative p-2 -mx-2 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-700 ${type === 'checkbox' ? 'mt-6' : ''}`}
-            onClick={() => !readOnly && setIsActive(true)}
-        >
-             {type !== 'checkbox' && (
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-0.5">{label}</label>
-            )}
-            
-            <div className="flex justify-between items-center">
-                <div className={`text-sm text-slate-900 dark:text-slate-100 font-medium truncate ${type === 'checkbox' ? 'flex items-center' : ''}`}>
-                    {type === 'checkbox' && <span className="mr-2 text-slate-500 dark:text-slate-400">{label}:</span>}
-                    {displayValue}
-                </div>
-                {!readOnly && (
-                    <Edit2 className="w-3 h-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                )}
-                {readOnly && (
-                     <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 px-1 rounded border border-slate-200 dark:border-slate-700">Locked</span>
-                )}
-            </div>
-        </div>
-    );
-};
-
 
 export const PropertyForm: React.FC<PropertyFormProps> = ({ 
-    initialData, catalogs, modelAssignments, statusAssignments,
-    metodoCompraAssignments, onSubmit, onCancel, isEditing = false 
+  initialData, catalogs, modelAssignments, onSubmit, onCancel, isEditing 
 }) => {
-  const [formData, setFormData] = useState<Partial<Propiedad>>({
-    idPropiedad: `pnty-${Math.floor(100000 + Math.random() * 900000)}`,
-    asesorExterno: false, m2TerrExc: 0, precioXM2Exc: 0, precioTerrExc: 0,
-    diasRezagoApartado: 0, diasAtrasoApartado: 0, diasAutorizadosApartado: 7, dtu: false,
-    ...initialData
-  });
-
-  const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null);
-
-  // --- LÓGICA DE CÁLCULOS (Se mantiene intacta) ---
-  const calculateFinalPrice = (data: Partial<Propiedad>) => {
-    const pLista = Number(data.precioLista) || 0;
-    const desc = Math.abs(Number(data.descuento) || 0); 
-    const pObras = Number(data.precioObrasAdicionales) || 0;
-    const pTerr = Number(data.precioTerrExc) || 0;
-    return pLista - desc + pObras + pTerr;
-  };
-
-  const calculateDaysLogic = (estado: string, fechaApartado?: string, diasAutorizados?: number) => {
-      if (estado !== 'APARTADO' || !fechaApartado) return { elapsed: 0, rezago: 0 };
-      const today = new Date(); today.setHours(0,0,0,0);
-      const [year, month, day] = String(fechaApartado).split('-').map(Number);
-      if (!year || !month || !day) return { elapsed: 0, rezago: 0 };
-      const fApartado = new Date(year, month - 1, day); fApartado.setHours(0,0,0,0);
-      const diffTime = today.getTime() - fApartado.getTime();
-      const elapsedDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      const authorizedLimit = diasAutorizados ?? 7; 
-      const rezago = elapsedDays > authorizedLimit ? elapsedDays - authorizedLimit : 0;
-      return { elapsed: elapsedDays > 0 ? elapsedDays : 0, rezago };
-  };
-
-  const calculateDiasDesdeRevisar = (fechaDesde?: string) => {
-      if (!fechaDesde) return undefined;
-      const today = new Date(); today.setHours(0,0,0,0);
-      const [year, month, day] = String(fechaDesde).split('-').map(Number);
-      const fD = new Date(year, month - 1, day); fD.setHours(0,0,0,0);
-      if (isNaN(fD.getTime())) return undefined;
-      const diffDays = Math.floor((today.getTime() - fD.getTime()) / (1000 * 60 * 60 * 24));
-      return diffDays + 1;
-  };
-
-  useEffect(() => {
-    if (initialData) {
-      setFormData({ 
-          dtu: false, diasAutorizadosApartado: initialData.diasAutorizadosApartado ?? 7,
-          ...initialData, precioFinal: calculateFinalPrice(initialData),
-          diasDesdeRevisar: calculateDiasDesdeRevisar(initialData.fechaDesde)
-      });
-    } else {
-       setFormData({
-        idPropiedad: `pnty-${Math.floor(100000 + Math.random() * 900000)}`,
-        asesorExterno: false, dtu: false, dtuAvaluo: DTUAvaluo.SIN_DTU,
-        diasRezagoApartado: 0, diasAtrasoApartado: 0, diasAutorizadosApartado: 7
-      });
+  const [formData, setFormData] = useState<Partial<Propiedad>>(
+    initialData || {
+      idPropiedad: `pnty-${Math.floor(100000 + Math.random() * 900000)}`,
+      desarrollo: '', nivel: '', modelo: '', estado: 'DISPONIBLE',
+      precioLista: 0, descuento: 0, precioFinal: 0, precioOperacion: 0,
+      m2TerrExc: 0, precioXM2Exc: 0, precioTerrExc: 0, precioObrasAdicionales: 0,
+      obrasAdicionales: '', observaciones: '', dtu: false, dtuAvaluo: 'SIN DTU', valorAvaluo: 0,
+      metodoCompra: '', banco: '', asesorExterno: false, asesor: '', calle: '', manzana: '',
+      lote: '', condomino: '', edificio: '', numeroExterior: '', numeroInterior: '',
+      nombreComprador: '', ek: '', tipoUsuario: '', diasAutorizadosApartado: 7,
+      url_comprobante_apartado: null, url_autorizacion_bancaria: null, 
+      url_mail_fovissste: null, url_solicitud_reubicacion: null
     }
-  }, [initialData]);
-
-  useEffect(() => {
-      const calculatedTerrPrice = (Number(formData.m2TerrExc) || 0) * (Number(formData.precioXM2Exc) || 0);
-      if (formData.precioTerrExc !== calculatedTerrPrice) setFormData(prev => ({ ...prev, precioTerrExc: calculatedTerrPrice }));
-  }, [formData.m2TerrExc, formData.precioXM2Exc]);
-
-  useEffect(() => {
-    const precioFinalCalculado = calculateFinalPrice(formData);
-    if (formData.precioFinal !== precioFinalCalculado) setFormData(prev => ({ ...prev, precioFinal: precioFinalCalculado }));
-  }, [formData.precioLista, formData.descuento, formData.precioObrasAdicionales, formData.precioTerrExc]);
-
-  useEffect(() => {
-      const valor = Number(formData.valorAvaluo) || 0;
-      let result = valor > 0 ? DTUAvaluo.AVALUO_CERRADO : (formData.dtu === true && valor === 0 ? DTUAvaluo.CON_DTU : DTUAvaluo.SIN_DTU);
-      if (formData.dtuAvaluo !== result) setFormData(prev => ({ ...prev, dtuAvaluo: result }));
-  }, [formData.valorAvaluo, formData.dtu]);
-
-  useEffect(() => {
-      const { elapsed, rezago } = calculateDaysLogic(formData.estado || '', formData.fechaApartado, formData.diasAutorizadosApartado);
-      if (formData.diasRezagoApartado !== rezago || formData.diasAtrasoApartado !== elapsed) {
-          setFormData(prev => ({ ...prev, diasRezagoApartado: rezago, diasAtrasoApartado: elapsed }));
-      }
-  }, [formData.estado, formData.fechaApartado, formData.diasAutorizadosApartado]);
-
-  useEffect(() => {
-      const result = calculateDiasDesdeRevisar(formData.fechaDesde);
-      if (formData.diasDesdeRevisar !== result) setFormData(prev => ({ ...prev, diasDesdeRevisar: result }));
-  }, [formData.fechaDesde]);
-
-  const findGroupForModel = (modelName: string) => {
-      if (!modelAssignments) return 'Sin Asignación';
-      for (const [group, models] of Object.entries(modelAssignments)) if ((models as string[]).includes(modelName)) return group;
-      return 'Sin Asignación';
-  };
-
-  const findGroupForStatus = (status: string) => {
-      if (!statusAssignments) return 'Sin Asignación';
-      for (const [group, statuses] of Object.entries(statusAssignments)) if ((statuses as string[]).includes(status)) return group;
-      return 'Sin Asignación';
-  };
-
-  const findGroupForMetodoCompra = (method: string) => {
-      if (!metodoCompraAssignments) return 'Sin Asignación';
-      for (const [group, methods] of Object.entries(metodoCompraAssignments)) if ((methods as string[]).includes(method)) return group;
-      return 'Sin Asignación';
-  };
-
-  // --- Handlers (Se mantienen intactos) ---
-  const handleCreateChange = (name: string, value: any) => setFormData(prev => ({ ...prev, [name]: value }));
-
-  const handleImmediateSave = (name: string, val: any) => {
-      const updatedData = { ...formData, [name]: val };
-      updatedData.precioFinal = calculateFinalPrice(updatedData);
-
-      if (name === 'valorAvaluo' || name === 'dtu') {
-          const valor = Number(updatedData.valorAvaluo) || 0;
-          updatedData.dtuAvaluo = valor > 0 ? DTUAvaluo.AVALUO_CERRADO : (updatedData.dtu === true && valor === 0 ? DTUAvaluo.CON_DTU : DTUAvaluo.SIN_DTU);
-      }
-      if (['estado', 'fechaApartado', 'diasAutorizadosApartado'].includes(name)) {
-          const { elapsed, rezago } = calculateDaysLogic(updatedData.estado || '', updatedData.fechaApartado, updatedData.diasAutorizadosApartado);
-          updatedData.diasAtrasoApartado = elapsed; updatedData.diasRezagoApartado = rezago;
-      }
-      if (name === 'fechaDesde') updatedData.diasDesdeRevisar = calculateDiasDesdeRevisar(String(val));
-
-      setFormData(updatedData);
-      const payload: Partial<Propiedad> = { idPropiedad: formData.idPropiedad, [name]: val, precioFinal: updatedData.precioFinal };
-      if (['valorAvaluo', 'dtu'].includes(name)) payload.dtuAvaluo = updatedData.dtuAvaluo;
-      if (['estado', 'fechaApartado', 'diasAutorizadosApartado'].includes(name)) { payload.diasRezagoApartado = updatedData.diasRezagoApartado; payload.diasAtrasoApartado = updatedData.diasAtrasoApartado; }
-      if (name === 'fechaDesde') payload.diasDesdeRevisar = updatedData.diasDesdeRevisar;
-
-      onSubmit(payload);
-      setNotification({ type: 'success', message: 'Campo actualizado correctamente.' });
-      setTimeout(() => setNotification(null), 2000);
-  };
-
-  const handleLandCalcSave = (name: string, val: any) => {
-      const updatedData = { ...formData, [name]: val };
-      const newTerrPrice = (Number(updatedData.m2TerrExc) || 0) * (Number(updatedData.precioXM2Exc) || 0);
-      updatedData.precioTerrExc = newTerrPrice;
-      const newFinalPrice = calculateFinalPrice(updatedData);
-      updatedData.precioFinal = newFinalPrice;
-      setFormData(updatedData);
-      onSubmit({ idPropiedad: formData.idPropiedad, [name]: val, precioTerrExc: newTerrPrice, precioFinal: newFinalPrice });
-      setNotification({ type: 'success', message: 'Cálculos actualizados.' });
-      setTimeout(() => setNotification(null), 2000);
-  };
-
-  const handleModelChange = (name: string, value: any) => {
-      const newGroup = findGroupForModel(value);
-      if (isEditing) {
-          const updates = { [name]: value, modeloAgrupador: newGroup, precioFinal: calculateFinalPrice({ ...formData, [name]: value }) };
-          setFormData(prev => ({ ...prev, ...updates })); onSubmit({ idPropiedad: formData.idPropiedad, ...updates });
-          setNotification({ type: 'success', message: 'Modelo actualizado.' }); setTimeout(() => setNotification(null), 2000);
-      } else setFormData(prev => ({ ...prev, [name]: value, modeloAgrupador: newGroup }));
-  };
-
-  const handleStatusChange = (name: string, value: any) => {
-      const newGroup = findGroupForStatus(value);
-      if (isEditing) {
-          const { elapsed, rezago } = calculateDaysLogic(value, formData.fechaApartado, formData.diasAutorizadosApartado);
-          const updates = { [name]: value, estadoAgrupador: newGroup, precioFinal: calculateFinalPrice({ ...formData, [name]: value }), diasRezagoApartado: rezago, diasAtrasoApartado: elapsed };
-          setFormData(prev => ({ ...prev, ...updates })); onSubmit({ idPropiedad: formData.idPropiedad, ...updates });
-          setNotification({ type: 'success', message: 'Estado actualizado.' }); setTimeout(() => setNotification(null), 2000);
-      } else setFormData(prev => ({ ...prev, [name]: value, estadoAgrupador: newGroup }));
-  };
-
-  const handleMetodoCompraChange = (name: string, value: any) => {
-      const newGroup = findGroupForMetodoCompra(value);
-      if (isEditing) {
-          const updates = { [name]: value, metodoCompraAgrupador: newGroup };
-          setFormData(prev => ({ ...prev, ...updates })); onSubmit({ idPropiedad: formData.idPropiedad, ...updates });
-          setNotification({ type: 'success', message: 'Método actualizado.' }); setTimeout(() => setNotification(null), 2000);
-      } else setFormData(prev => ({ ...prev, [name]: value, metodoCompraAgrupador: newGroup }));
-  };
-
-  const handleDiscountChange = (name: string, value: any) => {
-     const negVal = -Math.abs(value === '' ? 0 : Number(value));
-     if (isEditing) handleImmediateSave(name, negVal); else handleCreateChange(name, negVal);
-  };
-
-  const handleSubmitCreate = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.desarrollo || !formData.modelo) {
-        setNotification({ type: 'error', message: 'Complete Desarrollo y Modelo.' }); return;
-    }
-    const finalData = { ...formData };
-    if (!finalData.modeloAgrupador && finalData.modelo) finalData.modeloAgrupador = findGroupForModel(finalData.modelo);
-    if (!finalData.estadoAgrupador && finalData.estado) finalData.estadoAgrupador = findGroupForStatus(finalData.estado);
-    if (!finalData.metodoCompraAgrupador && finalData.metodoCompra) finalData.metodoCompraAgrupador = findGroupForMetodoCompra(finalData.metodoCompra);
-    finalData.precioTerrExc = (Number(finalData.m2TerrExc) || 0) * (Number(finalData.precioXM2Exc) || 0);
-    finalData.precioFinal = calculateFinalPrice(finalData);
-    
-    const valor = Number(finalData.valorAvaluo) || 0;
-    finalData.dtuAvaluo = valor > 0 ? DTUAvaluo.AVALUO_CERRADO : (finalData.dtu === true && valor === 0 ? DTUAvaluo.CON_DTU : DTUAvaluo.SIN_DTU);
-    
-    const { elapsed, rezago } = calculateDaysLogic(finalData.estado || '', finalData.fechaApartado, finalData.diasAutorizadosApartado);
-    finalData.diasRezagoApartado = rezago; finalData.diasAtrasoApartado = elapsed;
-    finalData.diasDesdeRevisar = calculateDiasDesdeRevisar(finalData.fechaDesde);
-
-    onSubmit(finalData);
-    setNotification({ type: 'success', message: 'Registro creado exitosamente.' });
-    setTimeout(() => {
-         setFormData({ idPropiedad: `pnty-${Math.floor(100000 + Math.random() * 900000)}`, asesorExterno: false, precioLista: 0, descuento: 0, precioObrasAdicionales: 0, precioTerrExc: 0, precioXM2Exc: 0, m2TerrExc: 0, precioFinal: 0, dtu: false, dtuAvaluo: DTUAvaluo.SIN_DTU, diasRezagoApartado: 0, diasAtrasoApartado: 0, diasAutorizadosApartado: 7 });
-         setNotification(null);
-    }, 1500);
-  };
-
-  const SectionTitle: React.FC<{ title: string }> = ({ title }) => (
-    <div className="mt-8 mb-4 pb-2 border-b border-slate-200 dark:border-slate-700">
-      <h4 className="text-lg font-medium text-slate-800 dark:text-slate-100">{title}</h4>
-    </div>
   );
 
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const pLista = Number(formData.precioLista) || 0;
+    const desc = Number(formData.descuento) || 0;
+    const m2Exc = Number(formData.m2TerrExc) || 0;
+    const pxm2 = Number(formData.precioXM2Exc) || 0;
+    const pObras = Number(formData.precioObrasAdicionales) || 0;
+
+    const terrExc = m2Exc * pxm2;
+    const final = pLista + desc + terrExc + pObras;
+
+    setFormData(prev => ({
+      ...prev,
+      precioTerrExc: terrExc,
+      precioFinal: final,
+      precioOperacion: ['DISPONIBLE', 'PRODUCCIÓN'].includes(prev.estado || '') ? 0 : (prev.precioOperacion || final) 
+    }));
+  }, [formData.precioLista, formData.descuento, formData.m2TerrExc, formData.precioXM2Exc, formData.precioObrasAdicionales, formData.estado]);
+
+  // --- LÓGICA DE SUBIDA A SUPABASE STORAGE ---
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: keyof Propiedad) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(prev => ({ ...prev, [field]: true }));
+    setFormError(null);
+
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${formData.idPropiedad}_${field}_${Math.random()}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('expedientes_ponty')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from('expedientes_ponty')
+        .getPublicUrl(filePath);
+
+      setFormData(prev => ({ ...prev, [field]: publicUrlData.publicUrl }));
+    } catch (error: any) {
+      setFormError('Error al subir archivo: ' + error.message);
+    } finally {
+      setIsUploading(prev => ({ ...prev, [field]: false }));
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null); 
+
+    const nivelesExcedentes = ['CASA EXC', 'PBF EXC', 'PBP EXC'];
+    if (nivelesExcedentes.includes(formData.nivel || '')) {
+      if (!formData.m2TerrExc || formData.m2TerrExc <= 0) return setFormError("Al seleccionar Nivel con Excedente, los M2 deben ser mayores a cero.");
+      if (!formData.precioXM2Exc || formData.precioXM2Exc <= 0) return setFormError("Al seleccionar Nivel con Excedente, el Precio por M2 debe ser mayor a cero.");
+    }
+
+    if (formData.dtuAvaluo === 'AVALÚO CERRADO') {
+      if (!formData.valorAvaluo || formData.valorAvaluo <= 0) return setFormError("Si el DTU/Avalúo está 'AVALÚO CERRADO', el Valor no puede ser cero.");
+    }
+
+    // --- REGLAS DE OBLIGATORIEDAD DE ARCHIVOS ---
+    if (formData.dtuAvaluo === 'SIN DTU' && !formData.url_comprobante_apartado) {
+      return setFormError("Regla de Negocio: Si la propiedad está 'SIN DTU', el Comprobante de Apartado es obligatorio.");
+    }
+
+    const requiereAutBanco = ['BANCARIO', 'COFINAVIT', 'INFO + BANCO'].includes(formData.metodoCompra || '');
+    if (requiereAutBanco && !formData.url_autorizacion_bancaria) {
+      return setFormError(`Regla de Negocio: Para el método ${formData.metodoCompra}, la Autorización Bancaria es obligatoria.`);
+    }
+
+    if (formData.metodoCompra === 'FOVISSSTE TRADICIONAL' && !formData.url_mail_fovissste) {
+      return setFormError("Regla de Negocio: Para FOVISSSTE TRADICIONAL, el Mail FOVISSSTE es obligatorio.");
+    }
+
+    let finalData = { ...formData };
+    if (['DISPONIBLE', 'PRODUCCIÓN'].includes(finalData.estado || '')) {
+      finalData.precioOperacion = 0;
+    } else if (finalData.estado === 'APARTADO' && !isEditing) {
+      finalData.precioOperacion = finalData.precioFinal;
+    }
+
+    onSubmit(finalData);
+  };
+
+  const getModelosDisponibles = () => {
+    if (!formData.desarrollo) return catalogs.modelo || [];
+    return modelAssignments[formData.desarrollo] || catalogs.modelo || [];
+  };
+
+  const renderFileUpload = (field: keyof Propiedad, label: string, isRequired: boolean) => {
+    const isUploadingThis = isUploading[field];
+    const hasFile = !!formData[field];
+
+    return (
+      <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+        <label className="block text-[11px] font-black text-slate-500 uppercase tracking-wider mb-2">
+          {label} {isRequired && <span className="text-red-500 ml-1">* Obligatorio</span>}
+        </label>
+        {hasFile ? (
+          <div className="flex items-center justify-between bg-emerald-50 dark:bg-emerald-900/20 p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-800/50">
+            <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
+              <CheckCircle2 className="w-4 h-4" />
+              <span className="text-xs font-bold truncate">Documento cargado</span>
+            </div>
+            <div className="flex gap-3">
+               <a href={formData[field] as string} target="_blank" rel="noreferrer" className="text-xs font-black text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 uppercase tracking-wider">Ver</a>
+               <button type="button" onClick={() => setFormData({...formData, [field]: null})} className="text-xs font-black text-red-600 hover:text-red-800 dark:text-red-400 uppercase tracking-wider">Borrar</button>
+            </div>
+          </div>
+        ) : (
+          <div className="relative flex items-center justify-center w-full h-11 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg hover:bg-white dark:hover:bg-slate-800 transition-colors cursor-pointer overflow-hidden bg-white dark:bg-slate-800">
+             {isUploadingThis ? (
+               <span className="text-xs font-bold text-slate-500 animate-pulse">Subiendo a la nube...</span>
+             ) : (
+               <>
+                 <UploadCloud className="w-4 h-4 text-indigo-500 mr-2" />
+                 <span className="text-xs font-bold text-slate-600 dark:text-slate-400">Clic para adjuntar PDF/Foto</span>
+                 <input type="file" accept=".pdf,image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={(e) => handleFileUpload(e, field)} disabled={isUploadingThis} />
+               </>
+             )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
-    <form onSubmit={handleSubmitCreate} className="bg-white dark:bg-slate-900 rounded-lg shadow-lg border border-slate-200 dark:border-slate-800 relative transition-colors duration-300">
-      {notification && (
-        <div className={`fixed top-24 right-4 z-50 p-4 rounded-md shadow-lg flex items-center animate-in slide-in-from-right ${notification.type === 'success' ? 'bg-green-100 dark:bg-green-900/90 text-green-800 dark:text-green-100 border border-green-200 dark:border-green-800' : 'bg-red-100 dark:bg-red-900/90 text-red-800 dark:text-red-100 border border-red-200 dark:border-red-800'}`}>
-          {notification.type === 'success' ? <CheckCircle2 className="w-5 h-5 mr-2" /> : <AlertCircle className="w-5 h-5 mr-2" />}
-          {notification.message}
+    <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in duration-500 transition-colors flex flex-col h-[85vh]">
+      
+      <div className="bg-slate-50 dark:bg-slate-800 px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center shrink-0">
+        <div>
+          <h2 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-2">
+            <Home className="w-5 h-5 text-indigo-600 dark:text-indigo-400" /> 
+            {isEditing ? 'Editar Propiedad' : 'Nueva Propiedad'}
+          </h2>
+          <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-1 uppercase tracking-wider">
+            ID: <span className="text-indigo-600 dark:text-indigo-400">{formData.idPropiedad}</span>
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <button type="button" onClick={onCancel} className="px-5 py-2.5 border border-slate-300 dark:border-slate-600 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center">
+            <X className="w-4 h-4 mr-2" /> Cancelar
+          </button>
+          <button type="submit" className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-200 dark:shadow-none transition-all active:scale-95 flex items-center">
+            <Save className="w-4 h-4 mr-2" /> Guardar
+          </button>
+        </div>
+      </div>
+
+      {formError && (
+        <div className="bg-red-50 dark:bg-red-900/30 border-b border-red-200 dark:border-red-900/50 p-4 shrink-0 flex items-start gap-3 animate-in slide-in-from-top-2">
+          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+          <p className="text-sm font-bold text-red-800 dark:text-red-300">{formError}</p>
         </div>
       )}
 
-      {/* --- HEADER --- */}
-      <div className="px-8 py-6 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-colors">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{isEditing ? 'Detalle de Propiedad' : 'Nueva Propiedad'}</h2>
-          <p className="text-slate-500 dark:text-slate-400">
-            {isEditing ? 'Edite los campos necesarios. Los cambios se guardan al confirmar.' : 'Complete el formulario para registrar una nueva propiedad.'}
-          </p>
-        </div>
+      <div className="p-6 md:p-8 space-y-10 overflow-y-auto custom-scrollbar flex-1">
         
-        <div className="flex space-x-3 w-full md:w-auto">
-            {!isEditing ? (
-                <>
-                     <button type="button" onClick={onCancel} className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
-                        <ArrowLeft className="w-4 h-4 mr-2 inline" /> Cancelar
-                    </button>
-                    <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 shadow-sm transition-colors">
-                        <Save className="w-4 h-4 mr-2 inline" /> Guardar
-                    </button>
-                </>
-            ) : (
-                 <button type="button" onClick={onCancel} className="hidden md:inline-flex px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
-                     <ArrowLeft className="w-4 h-4 mr-2 inline" /> Volver
-                </button>
-            )}
-        </div>
-      </div>
-
-      {/* --- FORM BODY --- */}
-      <div className="p-8">
-        
-        {/* --- 1. IDENTIFICACIÓN --- */}
-        <SectionTitle title="1. Identificación" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <SmartField label="ID Propiedad" name="idPropiedad" value={formData.idPropiedad} isEditingMode={isEditing} readOnly={true} onChange={handleCreateChange} helperText="Generado automáticamente" />
-            <SmartField label="Desarrollo" name="desarrollo" value={formData.desarrollo} type="select" options={catalogs.desarrollo} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="Nivel" name="nivel" value={formData.nivel} type="select" options={catalogs.nivel} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="Modelo" name="modelo" value={formData.modelo} type="select" options={catalogs.modelo} isEditingMode={isEditing} onChange={handleModelChange} onSave={handleModelChange} />
-            <SmartField label="Modelo Agrupador" name="modeloAgrupador" value={formData.modeloAgrupador} type="select" options={catalogs.modeloAgrupador} isEditingMode={isEditing} readOnly={true} onChange={() => {}} helperText="Calculado automáticamente" />
-        </div>
-
-        {/* --- 2. ESTADO --- */}
-        <SectionTitle title="2. Estado Actual" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <SmartField label="Estado" name="estado" value={formData.estado} type="select" options={catalogs.estado} isEditingMode={isEditing} onChange={handleStatusChange} onSave={handleStatusChange} />
-            <SmartField label="Estado Agrupador" name="estadoAgrupador" value={formData.estadoAgrupador} type="select" options={catalogs.estadoAgrupador} isEditingMode={isEditing} readOnly={true} onChange={() => {}} helperText="Calculado automáticamente" />
-            <SmartField label="FECHA APARTADO (dd-mm-aaaa)" name="fechaApartado" value={formData.fechaApartado} type="date" isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="DÍAS AUTORIZADOS APARTADO" name="diasAutorizadosApartado" value={formData.diasAutorizadosApartado} type="number" isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} helperText="Días límite antes de contar rezago" />
-            <SmartField label="DÍAS DE APARTADO" name="diasAtrasoApartado" value={formData.diasAtrasoApartado} type="number" isEditingMode={isEditing} readOnly={true} onChange={() => {}} helperText="Calculado: Hoy - Fecha Apartado" />
-            <div className="rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-900/10 p-3 flex flex-col justify-between h-full shadow-sm transition-colors">
-                <div className="flex items-center mb-1">
-                    <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 mr-2" />
-                    <label className="block text-xs font-bold text-red-800 dark:text-red-300 uppercase tracking-wider">Días Rezago</label>
-                </div>
-                <div className="flex items-end justify-between">
-                    <p className="text-[10px] text-red-600 dark:text-red-400 leading-tight max-w-[60%]">Calculado: Días Apartado - Días Autorizados</p>
-                    <div className="text-3xl font-bold text-red-700 dark:text-red-400">{formData.diasRezagoApartado || 0}</div>
-                </div>
+        <section>
+          <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-2">
+            <Layers className="w-4 h-4 text-indigo-500" /> Clasificación
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Desarrollo</label>
+              <select required className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={formData.desarrollo || ''} onChange={e => setFormData({...formData, desarrollo: e.target.value, modelo: ''})}>
+                <option value="">Seleccione...</option>
+                {catalogs.desarrollo?.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
             </div>
-            <SmartField label="FECHA VENTA (dd-mm-aaaa)" name="fechaVenta" value={formData.fechaVenta} type="date" isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="FECHA ESCRITURA (dd-mm-aaaa)" name="fechaEscritura" value={formData.fechaEscritura} type="date" isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-        </div>
-
-        {/* --- 3. FINANCIERO --- */}
-        <SectionTitle title="3. Información Financiera" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <SmartField label="Precio de Lista" name="precioLista" value={formData.precioLista} type="currency" prefix={<span className="text-slate-500 dark:text-slate-400">$</span>} suffix={<span className="text-slate-500 dark:text-slate-400">MXN</span>} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="Descuento" name="descuento" value={Math.abs(formData.descuento || 0)} type="currency" prefix={<span className="text-red-500 dark:text-red-400">-$</span>} helperText="Ingrese monto positivo, se aplicará como resta" isEditingMode={isEditing} onChange={handleDiscountChange} onSave={(n, v) => handleImmediateSave(n, -Math.abs(Number(v)))} transformDisplay={(v) => (<span className="text-red-600 dark:text-red-400">-{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(v || 0)}</span>)} />
-            <SmartField label="$ Obras Adicionales" name="precioObrasAdicionales" value={formData.precioObrasAdicionales} type="currency" prefix={<span className="text-slate-500 dark:text-slate-400">$</span>} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="M2 Terr. Excedente" name="m2TerrExc" value={formData.m2TerrExc} type="number" suffix={<span className="text-slate-500 dark:text-slate-400">m²</span>} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleLandCalcSave} />
-            <SmartField label="$ x m² Exc" name="precioXM2Exc" value={formData.precioXM2Exc} type="currency" prefix={<span className="text-slate-500 dark:text-slate-400">$</span>} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleLandCalcSave} />
-            <SmartField label="$ Terreno Excedente" name="precioTerrExc" value={formData.precioTerrExc} type="currency" prefix={<span className="text-slate-500 dark:text-slate-400">$</span>} isEditingMode={isEditing} readOnly={true} onChange={() => {}} helperText="Calculado: M2 x $ por m²" />
-            <div className={`md:col-span-3 rounded-lg border flex items-center justify-between p-4 transition-colors ${isEditing ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800' : 'bg-slate-50 border-slate-200 dark:bg-slate-800/50 dark:border-slate-700'}`}>
-                <div>
-                    <label className="block text-sm font-bold text-indigo-900 dark:text-indigo-300 mb-1 flex items-center"><Calculator className="w-4 h-4 mr-2" />Precio Final (Calculado)</label>
-                    <p className="text-xs text-indigo-700 dark:text-indigo-400">Lista - Descuento + Obras + Terr. Exc</p>
-                </div>
-                <div className="text-2xl font-bold text-indigo-800 dark:text-indigo-200">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(formData.precioFinal || 0)}</div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Modelo</label>
+              <select required className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={formData.modelo || ''} onChange={e => setFormData({...formData, modelo: e.target.value})}>
+                <option value="">Seleccione...</option>
+                {getModelosDisponibles().map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
             </div>
-            <SmartField label="DTU" name="dtu" value={formData.dtu} type="checkbox" isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="Valor Avalúo" name="valorAvaluo" value={formData.valorAvaluo} type="currency" prefix={<span className="text-slate-500 dark:text-slate-400">$</span>} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="DTU Avalúo" name="dtuAvaluo" value={formData.dtuAvaluo} type="select" options={catalogs.dtuAvaluo} isEditingMode={isEditing} readOnly={true} onChange={() => {}} helperText="Calculado según reglas (Valor/DTU)" />
-            <SmartField label="Precio Operación" name="precioOperacion" value={formData.precioOperacion} type="currency" prefix={<span className="text-slate-500 dark:text-slate-400">$</span>} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="EK" name="ek" value={formData.ek} type="text" helperText="ID ERP" isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-        </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Nivel</label>
+              <select required className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={formData.nivel || ''} onChange={e => setFormData({...formData, nivel: e.target.value})}>
+                <option value="">Seleccione...</option>
+                {catalogs.nivel?.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Estado</label>
+              <select required className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 font-black outline-none focus:ring-2 focus:ring-indigo-500" value={formData.estado || 'DISPONIBLE'} onChange={e => setFormData({...formData, estado: e.target.value})}>
+                {catalogs.estado?.map(e => <option key={e} value={e}>{e}</option>)}
+              </select>
+            </div>
+          </div>
+        </section>
 
-        {/* --- 4. UBICACIÓN --- */}
-        <SectionTitle title="4. Ubicación" />
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="col-span-2"><SmartField label="Calle" name="calle" value={formData.calle} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} /></div>
-            <SmartField label="Núm Ext" name="numeroExterior" value={formData.numeroExterior} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="Manzana" name="manzana" value={formData.manzana} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="Lote" name="lote" value={formData.lote} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="Condomino" name="condomino" value={formData.condomino} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="Edificio" name="edificio" value={formData.edificio} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="Núm Int" name="numeroInterior" value={formData.numeroInterior} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-        </div>
+        <section>
+          <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-2">
+            <DollarSign className="w-4 h-4 text-emerald-500" /> Financiero y Excedentes
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Precio de Lista</label>
+              <div className="relative">
+                <span className="absolute left-3 top-3.5 text-slate-400 font-bold">$</span>
+                <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 pl-8 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500" value={formData.precioLista || ''} onChange={e => setFormData({...formData, precioLista: Number(e.target.value)})} />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Descuento (-)</label>
+              <div className="relative">
+                <span className="absolute left-3 top-3.5 text-red-400 font-bold">-$</span>
+                <input type="number" className="w-full border border-red-200 dark:border-red-900/50 rounded-xl p-3 pl-9 bg-red-50 dark:bg-red-900/10 text-red-700 dark:text-red-400 font-bold outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500" value={Math.abs(formData.descuento || 0) || ''} onChange={e => setFormData({...formData, descuento: -Math.abs(Number(e.target.value))})} />
+              </div>
+            </div>
+            <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-xl border border-emerald-100 dark:border-emerald-900/50 flex flex-col justify-center items-center shadow-inner">
+              <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-500 uppercase tracking-widest mb-1">Precio Final Estimado</span>
+              <span className="text-2xl font-black text-emerald-700 dark:text-emerald-400">
+                {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(formData.precioFinal || 0)}
+              </span>
+            </div>
+          </div>
 
-        {/* --- 5. PROCESO DE VENTA --- */}
-        <SectionTitle title="5. Proceso de Venta" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <SmartField label="Nombre Comprador" name="nombreComprador" value={formData.nombreComprador} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} placeholder="MAYÚSCULAS" />
-            <SmartField label="Asesor de Venta" name="asesor" value={formData.asesor} type="select" options={catalogs.asesor} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="Es Asesor Externo" name="asesorExterno" value={formData.asesorExterno} type="checkbox" isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="Método Compra" name="metodoCompra" value={formData.metodoCompra} type="select" options={catalogs.metodoCompra} isEditingMode={isEditing} onChange={handleMetodoCompraChange} onSave={handleMetodoCompraChange} />
-            <SmartField label="Método Compra Agrupador" name="metodoCompraAgrupador" value={formData.metodoCompraAgrupador} type="select" options={catalogs.metodoCompraAgrupador} isEditingMode={isEditing} readOnly={true} onChange={() => {}} helperText="Calculado automáticamente" />
-            <SmartField label="Banco" name="banco" value={formData.banco} type="select" options={catalogs.banco} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="Nombre Broker Banco" name="nombreBrokerBanco" value={formData.nombreBrokerBanco} type="text" isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="Teléfono Broker Banco" name="telefonoBrokerBanco" value={formData.telefonoBrokerBanco} type="text" placeholder="10 dígitos" isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="Correo Broker Banco" name="correoBrokerBanco" value={formData.correoBrokerBanco} type="text" isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
-            <SmartField label="Tipo Usuario" name="tipoUsuario" value={formData.tipoUsuario} type="select" options={catalogs.tipoUsuario} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 bg-slate-50 dark:bg-slate-900/50 p-5 rounded-xl border border-slate-200 dark:border-slate-700">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">M2 Excedente</label>
+              <input type="number" step="0.01" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" value={formData.m2TerrExc || ''} onChange={e => setFormData({...formData, m2TerrExc: Number(e.target.value)})} />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">$ x M2</label>
+              <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" value={formData.precioXM2Exc || ''} onChange={e => setFormData({...formData, precioXM2Exc: Number(e.target.value)})} />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Monto Obras ($)</label>
+              <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" value={formData.precioObrasAdicionales || ''} onChange={e => setFormData({...formData, precioObrasAdicionales: Number(e.target.value)})} />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Desc. Obras Adic.</label>
+              <textarea 
+                className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white uppercase text-sm outline-none focus:ring-2 focus:ring-indigo-500" 
+                rows={2} 
+                value={formData.obrasAdicionales || ''} 
+                onChange={e => setFormData({...formData, obrasAdicionales: e.target.value.toUpperCase()})} 
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div>
+            <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-2">
+              <MapPin className="w-4 h-4 text-indigo-500" /> Ubicación
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Calle</label>
+                <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 uppercase" value={formData.calle || ''} onChange={e => setFormData({...formData, calle: e.target.value.toUpperCase()})} />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Num Ext</label>
+                <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 uppercase" value={formData.numeroExterior || ''} onChange={e => setFormData({...formData, numeroExterior: e.target.value.toUpperCase()})} />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Num Int</label>
+                <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 uppercase" value={formData.numeroInterior || ''} onChange={e => setFormData({...formData, numeroInterior: e.target.value.toUpperCase()})} />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Manzana</label>
+                <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 uppercase" value={formData.manzana || ''} onChange={e => setFormData({...formData, manzana: e.target.value.toUpperCase()})} />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Lote</label>
+                <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 uppercase" value={formData.lote || ''} onChange={e => setFormData({...formData, lote: e.target.value.toUpperCase()})} />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-2">
+              <FileText className="w-4 h-4 text-amber-500" /> Operativo (DTU / Avalúo)
+            </h3>
+            <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-xl border border-slate-200 dark:border-slate-700 space-y-5">
+              <label className="flex items-center gap-3 cursor-pointer p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl hover:bg-indigo-50 dark:hover:bg-slate-700 transition-colors">
+                <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-700" checked={formData.dtu || false} onChange={e => setFormData({...formData, dtu: e.target.checked})} />
+                <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Cuenta con DTU Físico</span>
+              </label>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Estatus DTU Avalúo</label>
+                <select className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={formData.dtuAvaluo || 'SIN DTU'} onChange={e => setFormData({...formData, dtuAvaluo: e.target.value})}>
+                  {catalogs.dtuAvaluo?.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Valor Avalúo ($)</label>
+                <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-amber-500" value={formData.valorAvaluo || ''} onChange={e => setFormData({...formData, valorAvaluo: Number(e.target.value)})} />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-2">
+            <User className="w-4 h-4 text-indigo-500" /> Extras y Observaciones
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Comprador</label>
+              <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 uppercase" value={formData.nombreComprador || ''} onChange={e => setFormData({...formData, nombreComprador: e.target.value.toUpperCase()})} />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Método de Compra</label>
+              <select className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" value={formData.metodoCompra || ''} onChange={e => setFormData({...formData, metodoCompra: e.target.value})}>
+                <option value="">Seleccione...</option>
+                {catalogs.metodoCompra?.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                <CalendarClock className="w-4 h-4" /> Días Aut. Apartado
+              </label>
+              <input type="number" min="1" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" value={formData.diasAutorizadosApartado || 7} onChange={e => setFormData({...formData, diasAutorizadosApartado: Number(e.target.value)})} />
+            </div>
+            <div className="md:col-span-2 lg:col-span-3">
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Observaciones Generales</label>
+              <textarea 
+                className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-4 bg-white dark:bg-slate-800 text-slate-900 dark:text-white uppercase text-sm outline-none focus:ring-2 focus:ring-indigo-500" 
+                rows={2} 
+                value={formData.observaciones || ''} 
+                onChange={e => setFormData({...formData, observaciones: e.target.value.toUpperCase()})} 
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* --- NUEVA SECCIÓN: EXPEDIENTE DIGITAL (ARCHIVOS) --- */}
+        <section className="bg-indigo-50/30 dark:bg-slate-800/50 p-6 rounded-2xl border border-indigo-100 dark:border-slate-700">
+          <h3 className="text-sm font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-widest flex items-center gap-2 mb-6 border-b border-indigo-200 dark:border-slate-600 pb-3">
+            <FolderOpen className="w-5 h-5 text-indigo-500" /> Expediente Digital (Nube)
+          </h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {formData.dtuAvaluo === 'SIN DTU' && 
+              renderFileUpload('url_comprobante_apartado', 'Comprobante de Apartado', true)
+            }
             
-            <div className="md:col-span-3">
-                <SmartField label="Observaciones" name="observaciones" value={formData.observaciones} type="text" isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} placeholder="Ingrese notas o comentarios sobre el proceso..." />
-            </div>
+            {['BANCARIO', 'COFINAVIT', 'INFO + BANCO'].includes(formData.metodoCompra || '') && 
+              renderFileUpload('url_autorizacion_bancaria', 'Autorización Bancaria', true)
+            }
 
-            <div className="md:col-span-3">
-                <SmartField label="RETRO ASESOR" name="retroAsesor" value={formData.retroAsesor} type="text" isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} placeholder="Ingrese retroalimentación del asesor..." />
-            </div>
+            {formData.metodoCompra === 'FOVISSSTE TRADICIONAL' && 
+              renderFileUpload('url_mail_fovissste', 'Mail FOVISSSTE', true)
+            }
 
-            <SmartField label="Titulación" name="titulacion" value={formData.titulacion} isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} placeholder="MAYÚSCULAS" />
-            <SmartField label="Fecha Desde" name="fechaDesde" value={formData.fechaDesde} type="date" isEditingMode={isEditing} onChange={handleCreateChange} onSave={handleImmediateSave} />
+            {renderFileUpload('url_solicitud_reubicacion', 'Solicitud de Reubicación (Opcional)', false)}
+          </div>
+          
+          {!(formData.dtuAvaluo === 'SIN DTU') && !['BANCARIO', 'COFINAVIT', 'INFO + BANCO', 'FOVISSSTE TRADICIONAL'].includes(formData.metodoCompra || '') && (
+            <p className="text-xs text-slate-500 font-bold italic">No se requieren documentos obligatorios para la configuración actual.</p>
+          )}
+        </section>
 
-            <div className="rounded-lg border border-indigo-200 dark:border-indigo-900/50 bg-indigo-50 dark:bg-indigo-900/20 p-3 flex flex-col justify-between h-full shadow-sm transition-colors">
-                <div className="flex items-center mb-1">
-                    <Clock className="w-4 h-4 text-indigo-600 dark:text-indigo-400 mr-2" />
-                    <label className="block text-xs font-bold text-indigo-800 dark:text-indigo-300 uppercase tracking-wider">DIAS DESDE REVISAR</label>
-                </div>
-                <div className="flex items-end justify-between">
-                    <p className="text-[10px] text-indigo-600 dark:text-indigo-400 leading-tight max-w-[60%]">Calculado: (Hoy - Fecha Desde) + 1</p>
-                    <div className="text-3xl font-bold text-indigo-700 dark:text-indigo-300">{formData.diasDesdeRevisar ?? '-'}</div>
-                </div>
-            </div>
-        </div>
       </div>
-
-      <button type="button" onClick={onCancel} className="fixed bottom-8 right-8 p-4 bg-slate-800 text-white rounded-full shadow-2xl hover:bg-slate-700 focus:outline-none focus:ring-4 focus:ring-slate-400 z-50 transition-all hover:scale-105 print:hidden" title="Volver al Inicio">
-        <ArrowLeft className="w-6 h-6" />
-      </button>
     </form>
   );
 };

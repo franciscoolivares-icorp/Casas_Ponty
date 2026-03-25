@@ -1,4 +1,3 @@
-
 // Definición de Catálogos (Enums) basados en el documento
 // Se mantienen los Enums como valores iniciales, pero la interfaz permite strings para flexibilidad
 
@@ -167,37 +166,39 @@ export enum Asesor {
 export interface Propiedad {
   // Identificadores y Clasificación
   idPropiedad: string; // pnty-000001 (Generado)
-  desarrollo: string; // Dynamic Catalog
-  nivel: string; // Dynamic Catalog
-  modelo: string; // Dynamic Catalog
-  modeloAgrupador: string; // Dynamic Catalog
+  created_at?: string; // IMPORTANTE para auditorías de Supabase
+  
+  desarrollo?: string | null; // Dynamic Catalog
+  nivel?: string | null; // Dynamic Catalog
+  modelo?: string | null; // Dynamic Catalog
+  modeloAgrupador?: string | null; // Dynamic Catalog
   
   // Estado
   estado: string; // Dynamic Catalog
-  estadoAgrupador: string; // Dynamic Catalog
+  estadoAgrupador?: string | null; // Dynamic Catalog
   
   // Financiero
-  precioLista: number;
-  descuento: number; // Negativo
-  precioFinal: number;
-  precioOperacion: number;
-  m2TerrExc: number; // 1 decimal
-  precioXM2Exc: number;
-  precioTerrExc: number;
-  precioObrasAdicionales: number;
-  obrasAdicionalesTexto?: string;
-  ek?: string; // ID ERP (Texto)
+  precioLista?: number;
+  descuento?: number; // Negativo
+  precioFinal?: number;
+  precioOperacion?: number;
+  m2TerrExc?: number; // 1 decimal
+  precioXM2Exc?: number;
+  precioTerrExc?: number;
+  precioObrasAdicionales?: number;
+  obrasAdicionales?: string | null; // CORREGIDO para empatar con DB
+  ek?: string | null; // ID ERP (Texto)
   
   // Datos Comprador
-  nombreComprador?: string;
-  titulacion?: string; 
-  fechaDesde?: string; 
-  diasDesdeRevisar?: number; // NUEVO CAMPO CALCULADO
+  nombreComprador?: string | null;
+  titulacion?: string | null; 
+  fechaDesde?: string | null; 
+  diasDesdeRevisar?: number; // CAMPO CALCULADO
   
   // Avalúo
-  dtu: boolean; 
-  dtuAvaluo: string; // Dynamic Catalog
-  valorAvaluo: number;
+  dtu?: boolean; 
+  dtuAvaluo?: string | null; // Dynamic Catalog
+  valorAvaluo?: number;
   
   // Fechas y Tiempos (Calculados o Inputs)
   contadorDiasMaximoApartado?: number; // Calculado
@@ -206,40 +207,46 @@ export interface Propiedad {
   diasRezagoApartado?: number; // Campo Calculado
   
   // Compra
-  metodoCompra: string; // Dynamic Catalog
-  metodoCompraAgrupador: string; // Dynamic Catalog (Nuevo)
-  banco?: string; // Dynamic Catalog
+  metodoCompra?: string | null; // Dynamic Catalog
+  metodoCompraAgrupador?: string | null; // Dynamic Catalog (Nuevo)
+  banco?: string | null; // Dynamic Catalog
   
   // Ubicación
-  calle?: string;
-  manzana?: string;
-  lote?: string;
-  edificio?: string;
-  numeroExterior?: string;
-  numeroInterior?: string;
-  condomino?: string;
+  calle?: string | null;
+  manzana?: string | null;
+  lote?: string | null;
+  edificio?: string | null;
+  numeroExterior?: string | null;
+  numeroInterior?: string | null;
+  condomino?: string | null;
   
   // Extras
-  asesorExterno: boolean;
-  asesor?: string; // Dynamic Catalog
-  observaciones?: string; 
-  retroAsesor?: string; 
+  asesorExterno?: boolean;
+  asesor?: string | null; // Dynamic Catalog
+  observaciones?: string | null; // NUEVO CAMPO AGREGADO
+  retroAsesor?: string | null; 
   
   // Broker
-  nombreBrokerBanco?: string;
-  telefonoBrokerBanco?: string; // 10 dígitos
-  correoBrokerBanco?: string;
+  nombreBrokerBanco?: string | null;
+  telefonoBrokerBanco?: string | null; // 10 dígitos
+  correoBrokerBanco?: string | null;
   
   // Auditoria
-  tipoUsuario: string; // Dynamic Catalog
+  tipoUsuario?: string | null; // Dynamic Catalog
   
   // Documentos (Simulados como strings/urls o booleanos para upload)
-  comprobanteApartado?: string; // imagen/documento
-  mailAutorizaFovissste?: string; // imagen/documento
-  autorizacionBanco?: string; // imagen/documento
+  comprobanteApartado?: string | null; // imagen/documento
+  mailAutorizaFovissste?: string | null; // imagen/documento
+  autorizacionBanco?: string | null; // imagen/documento
   
-  // Fechas Clave (Ahora parte del bloque de estado)
-  fechaApartado?: string; // Date string ISO
-  fechaVenta?: string; // Date string ISO
-  fechaEscritura?: string; // Date string ISO
+  // Fechas Clave 
+  fechaApartado?: string | null; // Date string ISO
+  fechaVenta?: string | null; // Date string ISO
+  fechaEscritura?: string | null; // Date string ISO
+
+  // Archivos
+  url_comprobante_apartado?: string | null;
+  url_autorizacion_bancaria?: string | null;
+  url_mail_fovissste?: string | null;
+  url_solicitud_reubicacion?: string | null;
 }

@@ -1,9 +1,10 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Propiedad } from '../types';
+import * as XLSX from 'xlsx';
 import { 
-  Layout, BarChart3, PieChart, Table as TableIcon, 
-  Plus, Trash2, Settings, X, Check, Edit3, 
-  Hash, DollarSign, Calculator, Filter, AlertCircle, GripVertical
+  PieChart, Download, Building2, 
+  Home, CheckCircle, Clock, AlertCircle, Filter, 
+  TrendingUp, BarChart3, Layers, CreditCard, FileSignature, Award, Users, FolderCheck
 } from 'lucide-react';
 
 interface ReporterViewProps {
@@ -11,807 +12,409 @@ interface ReporterViewProps {
   catalogs: { [key: string]: string[] };
 }
 
-type WidgetType = 'kpi' | 'bar' | 'pie' | 'table';
-type MetricType = 'count' | 'sum' | 'avg';
-type OperatorType = 'equals' | 'neq' | 'gt' | 'lt' | 'contains';
+export const ReporterView: React.FC<ReporterViewProps> = ({ properties }) => {
+  // --- FILTROS ---
+  const [selectedDesarrollo, setSelectedDesarrollo] = useState<string>('');
+  const [selectedModelo, setSelectedModelo] = useState<string>('');
 
-interface FilterRule {
-    id: string;
-    field: keyof Propiedad;
-    operator: OperatorType;
-    value: string;
-}
+  const desarrollosUnicos = useMemo(() => Array.from(new Set(properties.map(p => p.desarrollo).filter(Boolean))).sort(), [properties]);
+  const modelosUnicos = useMemo(() => {
+    let filtradas = properties;
+    if (selectedDesarrollo) filtradas = filtradas.filter(p => p.desarrollo === selectedDesarrollo);
+    return Array.from(new Set(filtradas.map(p => p.modelo).filter(Boolean))).sort();
+  }, [properties, selectedDesarrollo]);
 
-interface WidgetConfig {
-  id: string;
-  title: string;
-  type: WidgetType;
-  dimension: keyof Propiedad | 'idPropiedad' | ''; 
-  metric: MetricType; 
-  metricField: keyof Propiedad | ''; 
-  width: 'full' | 'half' | 'third';
-  filters: FilterRule[]; 
-  tableColumns?: string[]; 
-}
+  // --- DATOS FILTRADOS ---
+  const filteredProperties = useMemo(() => {
+    return properties.filter(p => {
+      const matchDesarrollo = selectedDesarrollo ? p.desarrollo === selectedDesarrollo : true;
+      const matchModelo = selectedModelo ? p.modelo === selectedModelo : true;
+      return matchDesarrollo && matchModelo;
+    });
+  }, [properties, selectedDesarrollo, selectedModelo]);
 
-const STORAGE_KEY_REPORTS = 'propertyMaster_dashboard_widgets';
+  // --- CÁLCULO DE MÉTRICAS (KPIs) ---
+  const totalPropiedades = filteredProperties.length;
+  const disponibles = filteredProperties.filter(p => p.estado === 'DISPONIBLE');
+  const apartados = filteredProperties.filter(p => p.estado === 'APARTADO' || p.estado === 'PENDIENTE APROBACIÓN');
+  const vendidos = filteredProperties.filter(p => ['VENDIDO', 'ESCRITURADO', 'ESCRITURADO-P'].includes(p.estado || ''));
+  const enProcesoTotal = apartados.length + vendidos.length;
 
-const COLORS = [
-  '#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', 
-  '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6', '#f97316'
-];
+  const pctDisponible = totalPropiedades ? (disponibles.length / totalPropiedades) * 100 : 0;
+  const pctApartado = totalPropiedades ? (apartados.length / totalPropiedades) * 100 : 0;
+  const pctVendido = totalPropiedades ? (vendidos.length / totalPropiedades) * 100 : 0;
 
-const AVAILABLE_FIELDS: { key: string; label: string; type: 'text' | 'number' | 'catalog' | 'boolean' | 'date' }[] = [
-    { key: 'idPropiedad', label: 'ID Propiedad', type: 'text' },
-    { key: 'desarrollo', label: 'Desarrollo', type: 'catalog' },
-    { key: 'modelo', label: 'Modelo', type: 'catalog' },
-    { key: 'nivel', label: 'Nivel', type: 'catalog' },
-    { key: 'estado', label: 'Estado', type: 'catalog' },
-    { key: 'asesor', label: 'Asesor', type: 'catalog' },
-    { key: 'nombreComprador', label: 'Comprador', type: 'text' },
-    { key: 'metodoCompra', label: 'Método Compra', type: 'catalog' },
-    { key: 'precioFinal', label: 'Precio Final', type: 'number' },
-    { key: 'precioLista', label: 'Precio Lista', type: 'number' },
-    { key: 'diasRezagoApartado', label: 'Días Rezago', type: 'number' },
-    { key: 'diasAutorizadosApartado', label: 'Días Aut. Apartado', type: 'number' },
-    { key: 'dtuAvaluo', label: 'DTU Avalúo', type: 'catalog' },
-    { key: 'dtu', label: 'DTU (Bool)', type: 'boolean' },
-    { key: 'fechaApartado', label: 'Fecha Apartado', type: 'date' },
-    { key: 'calle', label: 'Calle', type: 'text' },
-    { key: 'manzana', label: 'Manzana', type: 'text' },
-    { key: 'lote', label: 'Lote', type: 'text' },
-    { key: 'observaciones', label: 'Observaciones', type: 'text' },
-];
-
-const DEFAULT_WIDGETS: WidgetConfig[] = [
-  {
-      id: 'w-kpi-1',
-      title: 'Apartados rezagados con Avalúo Cerrado',
-      type: 'kpi',
-      dimension: '',
-      metric: 'count',
-      metricField: '',
-      width: 'third',
-      filters: [
-          { id: 'f1', field: 'estado', operator: 'equals', value: 'APARTADO' },
-          { id: 'f2', field: 'dtuAvaluo', operator: 'equals', value: 'AVALÚO CERRADO' },
-          { id: 'f3', field: 'diasRezagoApartado', operator: 'gt', value: '0' }
-      ]
-  },
-  {
-      id: 'w-kpi-2',
-      title: 'Apartados rezagados con DTU',
-      type: 'kpi',
-      dimension: '',
-      metric: 'count',
-      metricField: '',
-      width: 'third',
-      filters: [
-          { id: 'f1', field: 'estado', operator: 'equals', value: 'APARTADO' },
-          { id: 'f2', field: 'dtuAvaluo', operator: 'equals', value: 'CON DTU' },
-          { id: 'f3', field: 'diasRezagoApartado', operator: 'gt', value: '0' }
-      ]
-  },
-  {
-      id: 'w-kpi-3',
-      title: 'Apartados con Avalúo Cerrado o DTU',
-      type: 'kpi',
-      dimension: '',
-      metric: 'count',
-      metricField: '',
-      width: 'third',
-      filters: [
-          { id: 'f1', field: 'estado', operator: 'equals', value: 'APARTADO' },
-          { id: 'f2', field: 'dtuAvaluo', operator: 'neq', value: 'SIN DTU' }
-      ]
-  },
-  { 
-      id: '1', 
-      title: 'Rezago en Apartados con Avalúo Cerrado', 
-      type: 'table', 
-      dimension: '', 
-      metric: 'count', 
-      metricField: '', 
-      width: 'full',
-      tableColumns: ['desarrollo', 'modelo', 'asesor', 'nombreComprador', 'diasRezagoApartado'],
-      filters: [
-          { id: 'f1', field: 'estado', operator: 'equals', value: 'APARTADO' },
-          { id: 'f2', field: 'dtuAvaluo', operator: 'equals', value: 'AVALÚO CERRADO' },
-          { id: 'f3', field: 'diasRezagoApartado', operator: 'gt', value: '0' }
-      ]
-  },
-  { 
-      id: 'table-rezago-dtu', 
-      title: 'Rezago en Apartados CON DTU', 
-      type: 'table', 
-      dimension: '', 
-      metric: 'count', 
-      metricField: '', 
-      width: 'full',
-      tableColumns: ['desarrollo', 'modelo', 'asesor', 'nombreComprador', 'diasRezagoApartado'],
-      filters: [
-          { id: 'f1', field: 'estado', operator: 'equals', value: 'APARTADO' },
-          { id: 'f2', field: 'dtuAvaluo', operator: 'equals', value: 'CON DTU' },
-          { id: 'f3', field: 'diasRezagoApartado', operator: 'gt', value: '0' }
-      ]
-  },
-  { 
-      id: '2', 
-      title: 'Ventas Totales (Monto)', 
-      type: 'kpi', 
-      dimension: '', 
-      metric: 'sum', 
-      metricField: 'precioFinal', 
-      width: 'third',
-      filters: [
-          { id: 'f1', field: 'estado', operator: 'contains', value: 'VENDIDO' }
-      ]
-  },
-  { 
-      id: '3', 
-      title: 'Inventario por Desarrollo', 
-      type: 'bar', 
-      dimension: 'desarrollo', 
-      metric: 'count', 
-      metricField: '', 
-      width: 'third',
-      filters: [
-           { id: 'f1', field: 'estado', operator: 'equals', value: 'DISPONIBLE' }
-      ]
-  },
-];
-
-export const ReporterView: React.FC<ReporterViewProps> = ({ properties, catalogs }) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
+  const valorInventarioDisponible = disponibles.reduce((acc, curr) => acc + (Number(curr.precioFinal) || 0), 0);
+  const ingresosAsegurados = vendidos.reduce((acc, curr) => acc + (Number(curr.precioFinal) || 0), 0);
+  const ingresosEnProceso = apartados.reduce((acc, curr) => acc + (Number(curr.precioFinal) || 0), 0);
   
-  // Drag refs
-  const dragItem = useRef<number | null>(null);
-  
-  // Persistence Initialization
-  const [widgets, setWidgets] = useState<WidgetConfig[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_REPORTS);
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error("Failed to load dashboard from storage", e);
-      }
-    }
-    return DEFAULT_WIDGETS;
-  });
+  const ticketPromedio = enProcesoTotal > 0 
+    ? (ingresosAsegurados + ingresosEnProceso) / enProcesoTotal 
+    : 0;
 
-  // Persist on change
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_REPORTS, JSON.stringify(widgets));
-  }, [widgets]);
+  // --- AGRUPACIONES AVANZADAS ---
 
-  // --- ENGINE: DATA PROCESSING ---
-  const getFilteredData = (widget: WidgetConfig) => {
-       return properties.filter(prop => {
-        if (widget.filters.length === 0) return true;
-        
-        return widget.filters.every(filter => {
-            const propValue = prop[filter.field];
-            const filterValue = filter.value;
-            
-            if (propValue === undefined || propValue === null) return false;
-
-            const strProp = String(propValue).toUpperCase();
-            const strFilter = String(filterValue).toUpperCase();
-            const numProp = Number(propValue);
-            const numFilter = Number(filterValue);
-
-            switch (filter.operator) {
-                case 'equals': return strProp === strFilter;
-                case 'neq': return strProp !== strFilter;
-                case 'contains': return strProp.includes(strFilter);
-                case 'gt': return !isNaN(numProp) && !isNaN(numFilter) ? numProp > numFilter : false;
-                case 'lt': return !isNaN(numProp) && !isNaN(numFilter) ? numProp < numFilter : false;
-                default: return true;
-            }
-        });
+  // 1. Por Desarrollo
+  const statsPorDesarrollo = useMemo(() => {
+    const stats: Record<string, { total: number, disp: number, apart: number, vend: number }> = {};
+    filteredProperties.forEach(p => {
+      const des = p.desarrollo || 'SIN ASIGNAR';
+      if (!stats[des]) stats[des] = { total: 0, disp: 0, apart: 0, vend: 0 };
+      stats[des].total++;
+      if (p.estado === 'DISPONIBLE') stats[des].disp++;
+      if (p.estado === 'APARTADO' || p.estado === 'PENDIENTE APROBACIÓN') stats[des].apart++;
+      if (['VENDIDO', 'ESCRITURADO', 'ESCRITURADO-P'].includes(p.estado || '')) stats[des].vend++;
     });
-  }
+    return Object.entries(stats).sort((a, b) => b[1].total - a[1].total);
+  }, [filteredProperties]);
 
-  const processData = (widget: WidgetConfig) => {
-    const validData = getFilteredData(widget);
-
-    if (widget.type === 'table') {
-        return validData;
-    }
-
-    if (widget.type === 'kpi') {
-        const value = validData.reduce((acc, curr) => {
-            if (widget.metric === 'count') return acc + 1;
-            const fieldVal = Number(curr[widget.metricField as keyof Propiedad]) || 0;
-            return acc + fieldVal;
-        }, 0);
-        
-        const finalValue = widget.metric === 'avg' ? value / (validData.length || 1) : value;
-        return [{ label: 'Total', value: finalValue }];
-    }
-
-    if (!widget.dimension) return [];
-
-    const groups: { [key: string]: number[] } = {};
-    validData.forEach(p => {
-        const key = String(p[widget.dimension as keyof Propiedad] || 'Sin Asignar');
-        if (!groups[key]) groups[key] = [];
-        
-        if (widget.metric === 'count') {
-            groups[key].push(1);
-        } else {
-            const val = Number(p[widget.metricField as keyof Propiedad]) || 0;
-            groups[key].push(val);
-        }
+  // 2. Top Modelos Vendidos/Apartados
+  const topModelos = useMemo(() => {
+    const stats: Record<string, number> = {};
+    filteredProperties.filter(p => ['VENDIDO', 'ESCRITURADO', 'ESCRITURADO-P', 'APARTADO', 'PENDIENTE APROBACIÓN'].includes(p.estado || '')).forEach(p => {
+        const mod = p.modelo || 'OTRO';
+        stats[mod] = (stats[mod] || 0) + 1;
     });
+    return Object.entries(stats).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  }, [filteredProperties]);
 
-    const result = Object.entries(groups).map(([label, values]) => {
-        const sum = values.reduce((a, b) => a + b, 0);
-        let finalVal = sum;
-        if (widget.metric === 'avg') finalVal = sum / values.length;
-        return { label, value: finalVal };
+  // 3. Métodos de Compra
+  const metodosCompra = useMemo(() => {
+      const stats: Record<string, number> = {};
+      filteredProperties.filter(p => p.metodoCompra && ['VENDIDO', 'ESCRITURADO', 'ESCRITURADO-P', 'APARTADO', 'PENDIENTE APROBACIÓN'].includes(p.estado || '')).forEach(p => {
+          stats[p.metodoCompra!] = (stats[p.metodoCompra!] || 0) + 1;
+      });
+      return Object.entries(stats).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  }, [filteredProperties]);
+
+  // 4. Estatus DTU (Operativo)
+  const dtuStats = useMemo(() => {
+      const stats = { cerrado: 0, conDtu: 0, sinDtu: 0 };
+      filteredProperties.forEach(p => {
+          if (p.dtuAvaluo === 'AVALÚO CERRADO') stats.cerrado++;
+          else if (p.dtuAvaluo === 'CON DTU') stats.conDtu++;
+          else stats.sinDtu++;
+      });
+      return stats;
+  }, [filteredProperties]);
+
+  // 5. NUEVO: Top Asesores (Ranking de Rendimiento)
+  const topAsesores = useMemo(() => {
+    const stats: Record<string, { cantidad: number, monto: number }> = {};
+    filteredProperties.filter(p => p.asesor && ['VENDIDO', 'ESCRITURADO', 'ESCRITURADO-P', 'APARTADO', 'PENDIENTE APROBACIÓN'].includes(p.estado || '')).forEach(p => {
+        const asesor = p.asesor || 'SIN ASIGNAR';
+        if (!stats[asesor]) stats[asesor] = { cantidad: 0, monto: 0 };
+        stats[asesor].cantidad++;
+        stats[asesor].monto += (Number(p.precioFinal) || 0);
     });
+    return Object.entries(stats).sort((a, b) => b[1].cantidad - a[1].cantidad).slice(0, 5);
+  }, [filteredProperties]);
 
-    return result.sort((a, b) => b.value - a.value);
-  };
+  // 6. NUEVO: Salud del Expediente Digital (Nube)
+  const expedientesStats = useMemo(() => {
+      let conArchivos = 0;
+      let enProceso = enProcesoTotal;
+      
+      filteredProperties.filter(p => ['VENDIDO', 'ESCRITURADO', 'ESCRITURADO-P', 'APARTADO', 'PENDIENTE APROBACIÓN'].includes(p.estado || '')).forEach(p => {
+          if (p.url_comprobante_apartado || p.url_autorizacion_bancaria || p.url_mail_fovissste || p.url_solicitud_reubicacion) {
+              conArchivos++;
+          }
+      });
+      
+      return { conArchivos, faltantes: enProceso - conArchivos, total: enProceso, porcentaje: enProceso > 0 ? (conArchivos/enProceso)*100 : 0 };
+  }, [filteredProperties, enProcesoTotal]);
 
-  const formatValue = (val: any, fieldName: string) => {
-      if (typeof val === 'number') {
-        const field = String(fieldName).toLowerCase();
-        if (field.includes('precio') || field.includes('costo') || field.includes('monto') || field.includes('valor') || field.includes('avaluo')) {
-            return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(val);
-        }
-        return new Intl.NumberFormat('es-MX', { maximumFractionDigits: 1 }).format(val);
-      }
-      if (typeof val === 'boolean') {
-          return val ? 'Sí' : 'No';
-      }
-      return val;
-  };
+  // --- HELPERS ---
+  const formatCurrency = (amount: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(amount);
+  const formatCompact = (amount: number) => new Intl.NumberFormat('es-MX', { notation: "compact", compactDisplay: "short", maximumFractionDigits: 1 }).format(amount);
 
-  // --- ACTIONS ---
-  const addWidget = () => {
-      const newWidget: WidgetConfig = {
-          id: Math.random().toString(36).substr(2, 9),
-          title: 'Nuevo Gráfico',
-          type: 'bar',
-          dimension: 'desarrollo',
-          metric: 'count',
-          metricField: '',
-          width: 'half',
-          filters: []
-      };
-      setWidgets([...widgets, newWidget]);
-      setSelectedWidgetId(newWidget.id);
-  };
-
-  const removeWidget = (id: string) => {
-      setWidgets(widgets.filter(w => w.id !== id));
-      if (selectedWidgetId === id) setSelectedWidgetId(null);
-  };
-
-  const updateWidget = (id: string, updates: Partial<WidgetConfig>) => {
-      setWidgets(widgets.map(w => w.id === id ? { ...w, ...updates } : w));
-  };
-
-  const addFilter = (widgetId: string) => {
-      const w = widgets.find(w => w.id === widgetId);
-      if(!w) return;
-      const newFilter: FilterRule = {
-          id: Math.random().toString(36).substr(2, 9),
-          field: 'estado',
-          operator: 'equals',
-          value: ''
-      };
-      updateWidget(widgetId, { filters: [...w.filters, newFilter] });
-  };
-
-  const updateFilter = (widgetId: string, filterId: string, updates: Partial<FilterRule>) => {
-      const w = widgets.find(w => w.id === widgetId);
-      if(!w) return;
-      const newFilters = w.filters.map(f => f.id === filterId ? { ...f, ...updates } : f);
-      updateWidget(widgetId, { filters: newFilters });
-  };
-
-  const removeFilter = (widgetId: string, filterId: string) => {
-      const w = widgets.find(w => w.id === widgetId);
-      if(!w) return;
-      const newFilters = w.filters.filter(f => f.id !== filterId);
-      updateWidget(widgetId, { filters: newFilters });
-  };
-
-  // Drag and Drop Handlers for Table Columns
-  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, position: number) => {
-    dragItem.current = position;
-    e.dataTransfer.effectAllowed = 'move';
-  };
-
-  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>, position: number) => {
-    e.preventDefault();
-    const dragIndex = dragItem.current;
-    if (dragIndex === null || dragIndex === position || !selectedWidgetId) return;
-
-    const currentWidget = widgets.find(w => w.id === selectedWidgetId);
-    if (!currentWidget || !currentWidget.tableColumns) return;
-
-    const newCols = [...currentWidget.tableColumns];
-    const draggedItem = newCols[dragIndex];
-    newCols.splice(dragIndex, 1);
-    newCols.splice(position, 0, draggedItem);
-    
-    dragItem.current = position;
-    updateWidget(selectedWidgetId, { tableColumns: newCols });
-  };
-
-  const selectedWidget = widgets.find(w => w.id === selectedWidgetId);
-
-  // --- RENDERERS ---
-
-  const renderKPI = (data: { label: string, value: number }[], config: WidgetConfig) => {
-      const val = data[0]?.value || 0;
-      return (
-          <div className="flex flex-col items-center justify-center h-full pb-4">
-              <span className="text-5xl font-bold text-indigo-600 tracking-tight">{formatValue(val, config.metricField as string || 'count')}</span>
-              <span className="text-sm text-slate-400 mt-2 uppercase tracking-wider font-semibold">{config.metric === 'count' ? 'Registros Totales' : config.metricField}</span>
-          </div>
-      );
-  };
-
-  const renderBarChart = (data: { label: string, value: number }[], config: WidgetConfig) => {
-      const max = Math.max(...data.map(d => d.value)) || 1;
-      return (
-          <div className="h-full flex flex-col justify-end gap-2 pb-2 overflow-x-auto">
-              {data.slice(0, 10).map((d, i) => (
-                  <div key={i} className="flex items-center gap-2 group">
-                      <div className="w-28 text-xs text-slate-500 truncate text-right flex-shrink-0 font-medium" title={d.label}>{d.label}</div>
-                      <div className="flex-1 h-7 bg-slate-50 rounded-r overflow-hidden relative border border-slate-100">
-                          <div 
-                            className="h-full rounded-r transition-all duration-500 opacity-90 group-hover:opacity-100" 
-                            style={{ 
-                                width: `${(d.value / max) * 100}%`,
-                                backgroundColor: COLORS[i % COLORS.length] 
-                            }} 
-                          />
-                          <span className="absolute inset-y-0 left-2 flex items-center text-xs font-bold text-slate-700 drop-shadow-sm">
-                              {formatValue(d.value, config.metricField as string)}
-                          </span>
-                      </div>
-                  </div>
-              ))}
-              {data.length > 10 && <div className="text-xs text-center text-slate-400 pt-1 italic">...y {data.length - 10} más</div>}
-          </div>
-      );
-  };
-
-  const renderPieChart = (data: { label: string, value: number }[], config: WidgetConfig) => {
-    const total = data.reduce((a, b) => a + b.value, 0);
-    if (total === 0) return <div className="h-full flex items-center justify-center text-slate-400 text-xs italic">Sin datos suficientes</div>;
-    return (
-        <div className="h-full flex items-center justify-center gap-6 overflow-hidden">
-            <div 
-                className="w-32 h-32 rounded-full border-4 border-white shadow-lg flex-shrink-0"
-                style={{
-                    background: `conic-gradient(${data.map((d, i) => {
-                        const prevSum = data.slice(0, i).reduce((a, b) => a + b.value, 0);
-                        const start = (prevSum / total) * 100;
-                        const end = start + (d.value / total) * 100;
-                        return `${COLORS[i % COLORS.length]} ${start}% ${end}%`;
-                    }).join(', ')})`
-                }}
-            />
-            <div className="flex flex-col gap-1 max-h-40 overflow-y-auto custom-scrollbar">
-                {data.slice(0, 8).map((d, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs">
-                        <span className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: COLORS[i % COLORS.length] }}></span>
-                        <span className="text-slate-600 truncate max-w-[100px]" title={d.label}>{d.label}</span>
-                        <span className="font-bold text-slate-800">{Math.round((d.value / total) * 100)}%</span>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-  };
-
-  const renderTable = (data: Propiedad[], config: WidgetConfig) => {
-      const columns = config.tableColumns && config.tableColumns.length > 0 
-          ? config.tableColumns 
-          : ['idPropiedad', 'desarrollo', 'modelo', 'precioFinal'];
-
-      return (
-          <div className="h-full overflow-auto custom-scrollbar border border-slate-100 rounded bg-white">
-              <table className="min-w-full divide-y divide-slate-200">
-                  <thead className="bg-slate-50 sticky top-0 shadow-sm z-10">
-                      <tr>
-                          {columns.map(colKey => {
-                              const field = AVAILABLE_FIELDS.find(f => f.key === colKey);
-                              return (
-                                  <th key={colKey} className="px-3 py-2 text-left text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                                      {field?.label || colKey}
-                                  </th>
-                              );
-                          })}
-                      </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-slate-200">
-                      {data.map((item, i) => (
-                          <tr key={item.idPropiedad} className="hover:bg-slate-50 transition-colors">
-                              {columns.map(colKey => (
-                                  <td key={colKey} className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap border-r border-transparent last:border-0">
-                                      {formatValue(item[colKey as keyof Propiedad], colKey)}
-                                  </td>
-                              ))}
-                          </tr>
-                      ))}
-                      {data.length === 0 && (
-                          <tr><td colSpan={columns.length} className="text-center py-8 text-xs text-slate-400">Sin datos</td></tr>
-                      )}
-                  </tbody>
-              </table>
-          </div>
-      );
+  const exportToExcel = () => {
+    if (filteredProperties.length === 0) {
+        alert("No hay datos para exportar."); return;
+    }
+    const dataToExport = filteredProperties.map(p => ({
+        "ID Propiedad": p.idPropiedad,
+        "Desarrollo": p.desarrollo,
+        "Modelo": p.modelo,
+        "Nivel": p.nivel,
+        "Estado": p.estado,
+        "Comprador": p.nombreComprador || 'N/A',
+        "Precio Final": p.precioFinal || 0,
+        "DTU / Avalúo": p.dtuAvaluo || 'SIN DTU',
+        "Valor Avalúo": p.valorAvaluo || 0,
+        "Metodo Compra": p.metodoCompra || 'N/A',
+        "Asesor Asignado": p.asesor || 'N/A',
+        "Broker Banco": p.nombreBrokerBanco || 'N/A',
+        "Días Atraso (Rev)": p.diasDesdeRevisar || 0,
+        "Ubicación": `${p.calle || ''} ${p.numeroExterior || ''} ${p.numeroInterior ? 'Int ' + p.numeroInterior : ''}`.trim(),
+        "M2 Exc": p.m2TerrExc || 0,
+        "Obras Adicionales": p.obrasAdicionales || 'N/A',
+        "URL Comprobante (Nube)": p.url_comprobante_apartado || 'Sin Archivo',
+        "URL Aut. Banco (Nube)": p.url_autorizacion_bancaria || 'Sin Archivo',
+        "URL FOVISSSTE (Nube)": p.url_mail_fovissste || 'Sin Archivo'
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Reporte_General");
+    XLSX.writeFile(workbook, `Reporte_Inteligencia_Ponty_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   return (
-    <div className="flex h-[calc(100vh-100px)] bg-slate-100 overflow-hidden">
+    <div className="space-y-6 animate-in fade-in duration-500 pb-10">
       
-      <div className="flex-1 overflow-y-auto p-6 transition-all duration-300">
-        
-        <div className="flex justify-between items-center mb-6">
+      {/* HEADER Y FILTROS */}
+      <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-colors">
+        <div className="flex items-center gap-3">
+            <div className="p-3 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-xl"><BarChart3 className="w-6 h-6" /></div>
             <div>
-                <h2 className="text-2xl font-bold text-slate-800 flex items-center">
-                    <Layout className="w-6 h-6 mr-2 text-indigo-600" />
-                    Reporteador
-                </h2>
-                <p className="text-slate-500 text-sm">Crea tableros personalizados con filtros avanzados.</p>
+                <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-wide">Inteligencia de Negocio</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Métricas integrales de inventario y titulación</p>
             </div>
-            <div className="flex gap-3">
-                <button 
-                    onClick={() => {
-                      setIsEditing(!isEditing);
-                      if(isEditing) setSelectedWidgetId(null);
-                    }}
-                    className={`flex items-center px-4 py-2 rounded-md shadow-sm text-sm font-medium transition-colors ${isEditing ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'}`}
-                >
-                    {isEditing ? <Check className="w-4 h-4 mr-2" /> : <Edit3 className="w-4 h-4 mr-2" />}
-                    {isEditing ? 'Terminar Edición' : 'Editar Tablero'}
-                </button>
-                {isEditing && (
-                    <button 
-                        onClick={addWidget}
-                        className="flex items-center px-4 py-2 rounded-md shadow-sm text-sm font-medium bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50"
-                    >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Agregar Widget
-                    </button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+            <div className="flex items-center bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 w-full md:w-auto">
+                <Filter className="w-4 h-4 text-slate-400 ml-2 mr-1" />
+                <select value={selectedDesarrollo} onChange={e => {setSelectedDesarrollo(e.target.value); setSelectedModelo('');}} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-300 py-1.5 px-2 outline-none w-full md:w-auto min-w-[140px]">
+                    <option value="">Todos los Desarrollos</option>
+                    {desarrollosUnicos.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+            </div>
+            <div className="flex items-center bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 w-full md:w-auto">
+                <Layers className="w-4 h-4 text-slate-400 ml-2 mr-1" />
+                <select value={selectedModelo} onChange={e => setSelectedModelo(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-300 py-1.5 px-2 outline-none w-full md:w-auto min-w-[140px]">
+                    <option value="">Todos los Modelos</option>
+                    {modelosUnicos.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+            </div>
+            <button onClick={exportToExcel} className="w-full md:w-auto flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-emerald-200 dark:shadow-none transition-all active:scale-95">
+                <Download className="w-4 h-4" /> Exportar BD
+            </button>
+        </div>
+      </div>
+
+      {/* TARJETAS DE KPIs SUPERIORES */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between transition-colors">
+            <div className="flex justify-between items-start mb-2">
+                <p className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Total Inventario</p>
+                <div className="p-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg"><Home className="w-5 h-5" /></div>
+            </div>
+            <div>
+                <h3 className="text-3xl font-black text-slate-900 dark:text-white">{totalPropiedades}</h3>
+                <p className="text-xs font-bold text-slate-400 mt-1">Ticket Prom: {formatCurrency(ticketPromedio)}</p>
+            </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between transition-colors group hover:border-red-300 dark:hover:border-red-800">
+            <div className="flex justify-between items-start mb-2">
+                <p className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Cierre (Vendidos)</p>
+                <div className="p-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg transition-colors"><CheckCircle className="w-5 h-5" /></div>
+            </div>
+            <div>
+                <div className="flex items-baseline gap-2">
+                    <h3 className="text-3xl font-black text-slate-900 dark:text-white">{vendidos.length}</h3>
+                    <span className="text-sm font-bold text-red-600 dark:text-red-400">({pctVendido.toFixed(1)}%)</span>
+                </div>
+                <p className="text-xs font-bold text-slate-400 mt-1">${formatCompact(ingresosAsegurados)} MXN Ingresados</p>
+            </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between transition-colors group hover:border-amber-300 dark:hover:border-amber-800">
+            <div className="flex justify-between items-start mb-2">
+                <p className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Proceso (Apartados)</p>
+                <div className="p-2 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-lg transition-colors"><Clock className="w-5 h-5" /></div>
+            </div>
+            <div>
+                <div className="flex items-baseline gap-2">
+                    <h3 className="text-3xl font-black text-slate-900 dark:text-white">{apartados.length}</h3>
+                    <span className="text-sm font-bold text-amber-600 dark:text-amber-400">({pctApartado.toFixed(1)}%)</span>
+                </div>
+                <p className="text-xs font-bold text-slate-400 mt-1">${formatCompact(ingresosEnProceso)} MXN en tubería</p>
+            </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between transition-colors group hover:border-green-300 dark:hover:border-green-800">
+            <div className="flex justify-between items-start mb-2">
+                <p className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Stock Disponible</p>
+                <div className="p-2 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg transition-colors"><TrendingUp className="w-5 h-5" /></div>
+            </div>
+            <div>
+                <div className="flex items-baseline gap-2">
+                    <h3 className="text-3xl font-black text-slate-900 dark:text-white">{disponibles.length}</h3>
+                    <span className="text-sm font-bold text-green-600 dark:text-green-400">({pctDisponible.toFixed(1)}%)</span>
+                </div>
+                <p className="text-xs font-bold text-slate-400 mt-1">Valor: ${formatCompact(valorInventarioDisponible)} MXN</p>
+            </div>
+        </div>
+      </div>
+
+      {/* --- GRÁFICA GIGANTE DE DISTRIBUCIÓN --- */}
+      <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm transition-colors">
+          <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-2">
+                <PieChart className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">Estatus Global de Inventario</h3>
+              </div>
+              <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-red-500"></div> Vendido</span>
+                  <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-400"></div> Apartado</span>
+                  <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-green-500"></div> Disponible</span>
+              </div>
+          </div>
+          
+          <div className="w-full h-12 flex rounded-xl overflow-hidden mb-2 shadow-inner border border-slate-100 dark:border-slate-700">
+              {pctVendido > 0 && <div style={{ width: `${pctVendido}%` }} className="bg-red-500 dark:bg-red-600 flex items-center justify-center text-white text-xs font-bold transition-all duration-1000" title="Vendido/Escriturado">{pctVendido > 5 && `${pctVendido.toFixed(1)}%`}</div>}
+              {pctApartado > 0 && <div style={{ width: `${pctApartado}%` }} className="bg-amber-400 dark:bg-amber-500 flex items-center justify-center text-amber-900 text-xs font-bold transition-all duration-1000" title="Apartado">{pctApartado > 5 && `${pctApartado.toFixed(1)}%`}</div>}
+              {pctDisponible > 0 && <div style={{ width: `${pctDisponible}%` }} className="bg-green-500 dark:bg-green-600 flex items-center justify-center text-white text-xs font-bold transition-all duration-1000" title="Disponible">{pctDisponible > 5 && `${pctDisponible.toFixed(1)}%`}</div>}
+          </div>
+      </div>
+
+      {/* --- BLOQUE DE 4 COLUMNAS (MÉTRICAS CLAVE) --- */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+        
+        {/* COLUMNA 1: Desglose por Desarrollo */}
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col transition-colors">
+            <div className="flex items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-4">
+                <Building2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">Por Desarrollo</h3>
+            </div>
+            <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-5">
+                {statsPorDesarrollo.length === 0 ? (
+                    <div className="text-center py-10 text-slate-400"><AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-30" /><p className="text-sm font-medium">Sin datos</p></div>
+                ) : (
+                    statsPorDesarrollo.map(([desarrollo, stat]) => (
+                        <div key={desarrollo} className="flex flex-col gap-2">
+                            <div className="flex justify-between items-end">
+                                <p className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">{desarrollo}</p>
+                                <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase">{stat.total} Unds</span>
+                            </div>
+                            <div className="w-full flex h-2 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-700">
+                                <div style={{width: `${(stat.vend / stat.total) * 100}%`}} className="bg-red-500" title={`Vendidos: ${stat.vend}`}></div>
+                                <div style={{width: `${(stat.apart / stat.total) * 100}%`}} className="bg-amber-400" title={`Apartados: ${stat.apart}`}></div>
+                                <div style={{width: `${(stat.disp / stat.total) * 100}%`}} className="bg-green-500" title={`Disponibles: ${stat.disp}`}></div>
+                            </div>
+                        </div>
+                    ))
                 )}
             </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
-            {widgets.map((widget) => {
-                const data = processData(widget);
-                const isSelected = selectedWidgetId === widget.id;
-                
-                let colSpan = 'col-span-1';
-                if (widget.width === 'half') colSpan = 'col-span-1 md:col-span-1 lg:col-span-2';
-                if (widget.width === 'full') colSpan = 'col-span-1 md:col-span-2 lg:col-span-3';
-
-                return (
-                    <div 
-                        key={widget.id} 
-                        onClick={() => isEditing && setSelectedWidgetId(widget.id)}
-                        className={`
-                            relative bg-white rounded-xl shadow-sm border transition-all duration-200 flex flex-col h-96
-                            ${colSpan}
-                            ${isEditing ? 'cursor-pointer hover:shadow-md hover:border-indigo-300' : ''}
-                            ${isSelected && isEditing ? 'ring-2 ring-indigo-500 border-indigo-500' : 'border-slate-200'}
-                        `}
-                    >
-                        <div className="px-5 py-3 border-b border-slate-100 flex justify-between items-center bg-slate-50/30 rounded-t-xl">
-                            <div className="flex flex-col overflow-hidden">
-                                <h3 className="font-bold text-slate-700 truncate">{widget.title}</h3>
-                                {widget.filters.length > 0 && (
-                                    <div className="flex items-center text-[10px] text-indigo-600 gap-1 mt-0.5">
-                                        <Filter className="w-3 h-3" />
-                                        <span>{widget.filters.length} filtro(s) activo(s)</span>
-                                    </div>
-                                )}
+        {/* COLUMNA 2: Top Modelos y Métodos de Compra */}
+        <div className="flex flex-col gap-6">
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col flex-1 transition-colors">
+                <div className="flex items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-4">
+                    <Award className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                    <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">Top Modelos</h3>
+                </div>
+                <div className="space-y-3">
+                    {topModelos.length === 0 ? <p className="text-sm text-slate-400 text-center py-4">Sin ventas</p> : 
+                    topModelos.map(([modelo, cantidad], idx) => (
+                        <div key={modelo} className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <span className="w-4 h-4 rounded bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 flex items-center justify-center text-[9px] font-black">{idx + 1}</span>
+                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">{modelo}</span>
                             </div>
-                            {isEditing && (
-                                <div className="flex gap-1">
-                                    <button 
-                                        onClick={(e) => { e.stopPropagation(); removeWidget(widget.id); }}
-                                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            )}
+                            <span className="text-sm font-black text-slate-900 dark:text-white">{cantidad}</span>
                         </div>
+                    ))}
+                </div>
+            </div>
 
-                        <div className="flex-1 p-5 min-h-0">
-                            {widget.type === 'kpi' && renderKPI(data as any, widget)}
-                            {widget.type === 'bar' && renderBarChart(data as any, widget)}
-                            {widget.type === 'pie' && renderPieChart(data as any, widget)}
-                            {widget.type === 'table' && renderTable(data as any, widget)}
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col flex-1 transition-colors">
+                <div className="flex items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-4">
+                    <CreditCard className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                    <h3 className="text-[11px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">Métodos de Compra</h3>
+                </div>
+                <div className="space-y-3">
+                    {metodosCompra.length === 0 ? <p className="text-sm text-slate-400 text-center py-4">Sin datos</p> : 
+                    metodosCompra.map(([metodo, cantidad]) => (
+                        <div key={metodo}>
+                            <div className="flex justify-between mb-1">
+                                <span className="text-[9px] font-bold text-slate-600 dark:text-slate-400 uppercase truncate pr-2">{metodo}</span>
+                                <span className="text-[9px] font-black text-slate-900 dark:text-white">{((cantidad / enProcesoTotal) * 100).toFixed(0)}%</span>
+                            </div>
+                            <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-1">
+                                <div className="bg-indigo-500 h-1 rounded-full" style={{ width: `${(cantidad / enProcesoTotal) * 100}%` }}></div>
+                            </div>
                         </div>
-                    </div>
-                );
-            })}
+                    ))}
+                </div>
+            </div>
         </div>
-      </div>
 
-      {isEditing && selectedWidget && (
-          <div className="w-96 bg-white border-l border-slate-200 shadow-2xl flex flex-col animate-in slide-in-from-right duration-300 z-20">
-              <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-                  <h3 className="font-bold text-slate-800 flex items-center">
-                      <Settings className="w-4 h-4 mr-2" />
-                      Configuración de Widget
-                  </h3>
-                  <button onClick={() => setSelectedWidgetId(null)}><X className="w-5 h-5 text-slate-400 hover:text-slate-600" /></button>
-              </div>
+        {/* COLUMNA 3: Estatus Titulación (DTU) y Expedientes */}
+        <div className="flex flex-col gap-6">
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col transition-colors flex-1">
+                <div className="flex items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-4">
+                    <FileSignature className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                    <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">Titulación (DTU)</h3>
+                </div>
+                
+                <div className="flex-1 flex flex-col justify-center gap-3">
+                    <div className="p-3 rounded-xl border border-green-200 dark:border-green-900/50 bg-green-50 dark:bg-green-900/10 flex items-center justify-between">
+                        <div>
+                            <p className="text-[10px] font-black text-green-600 dark:text-green-500 uppercase tracking-widest mb-0.5">Avalúo Cerrado</p>
+                        </div>
+                        <span className="text-xl font-black text-green-700 dark:text-green-400">{dtuStats.cerrado}</span>
+                    </div>
 
-              <div className="flex-1 overflow-y-auto p-5 space-y-6">
-                  
-                  <div className="space-y-3">
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Título</label>
-                      <input 
-                        type="text" 
-                        value={selectedWidget.title}
-                        onChange={(e) => updateWidget(selectedWidget.id, { title: e.target.value })}
-                        className="block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border"
-                      />
-                  </div>
+                    <div className="p-3 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/10 flex items-center justify-between">
+                        <div>
+                            <p className="text-[10px] font-black text-amber-600 dark:text-amber-500 uppercase tracking-widest mb-0.5">Con DTU</p>
+                        </div>
+                        <span className="text-xl font-black text-amber-700 dark:text-amber-400">{dtuStats.conDtu}</span>
+                    </div>
 
-                  <div className="space-y-3">
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Visualización</label>
-                      <div className="grid grid-cols-2 gap-2">
-                          {[
-                              { id: 'kpi', label: 'KPI', icon: Hash },
-                              { id: 'bar', label: 'Barras', icon: BarChart3 },
-                              { id: 'pie', label: 'Pastel', icon: PieChart },
-                              { id: 'table', label: 'Tabla', icon: TableIcon },
-                          ].map(t => (
-                              <button
-                                key={t.id}
-                                onClick={() => updateWidget(selectedWidget.id, { type: t.id as WidgetType })}
-                                className={`flex items-center justify-center gap-2 p-2 rounded border text-sm transition-all ${selectedWidget.type === t.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'border-slate-200 hover:bg-slate-50 text-slate-600'}`}
-                              >
-                                  <t.icon className="w-4 h-4" />
-                                  {t.label}
-                              </button>
-                          ))}
-                      </div>
-                  </div>
+                    <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 flex items-center justify-between">
+                        <div>
+                            <p className="text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-0.5">Sin DTU</p>
+                        </div>
+                        <span className="text-xl font-black text-slate-700 dark:text-slate-300">{dtuStats.sinDtu}</span>
+                    </div>
+                </div>
+            </div>
 
-                  <hr className="border-slate-100" />
+            {/* NUEVA TARJETA: SALUD DEL EXPEDIENTE (NUBE) */}
+            <div className="bg-indigo-600 p-6 rounded-2xl shadow-lg flex flex-col items-center justify-center text-center relative overflow-hidden group">
+                <div className="absolute -right-4 -top-4 opacity-10 transform group-hover:scale-110 transition-transform duration-500">
+                    <FolderCheck className="w-32 h-32 text-white" />
+                </div>
+                <h3 className="text-[10px] font-black text-indigo-200 uppercase tracking-widest mb-1 relative z-10">Expedientes en Nube</h3>
+                <p className="text-4xl font-black text-white relative z-10 mb-1">{expedientesStats.porcentaje.toFixed(0)}%</p>
+                <p className="text-[10px] text-indigo-100 font-medium relative z-10 uppercase tracking-wider">{expedientesStats.conArchivos} de {expedientesStats.total} clientes con doc.</p>
+            </div>
+        </div>
 
-                   <div className="space-y-4">
-                        <h4 className="font-bold text-sm text-slate-800">Datos</h4>
-                        
-                        {selectedWidget.type === 'table' ? (
-                            <div className="space-y-3">
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Columnas Visibles (Arrastrar para ordenar)</label>
-                                
-                                <div className="space-y-1 bg-slate-50 p-2 rounded border border-slate-200 max-h-60 overflow-y-auto">
-                                    {(selectedWidget.tableColumns || []).map((colKey, index) => {
-                                        const fieldLabel = AVAILABLE_FIELDS.find(f => f.key === colKey)?.label || colKey;
-                                        return (
-                                            <div 
-                                                key={colKey}
-                                                draggable
-                                                onDragStart={(e) => handleDragStart(e, index)}
-                                                onDragEnter={(e) => handleDragEnter(e, index)}
-                                                onDragOver={(e) => e.preventDefault()}
-                                                className="flex items-center justify-between p-2 bg-white border border-slate-200 rounded shadow-sm cursor-grab active:cursor-grabbing hover:bg-slate-50"
-                                            >
-                                                <div className="flex items-center gap-2">
-                                                    <GripVertical className="w-4 h-4 text-slate-400" />
-                                                    <span className="text-xs font-medium text-slate-700">{fieldLabel}</span>
-                                                </div>
-                                                <button 
-                                                    onClick={() => {
-                                                        const newCols = (selectedWidget.tableColumns || []).filter(c => c !== colKey);
-                                                        updateWidget(selectedWidget.id, { tableColumns: newCols });
-                                                    }}
-                                                    className="text-slate-400 hover:text-red-500 bg-transparent hover:bg-red-50 p-1 rounded transition-colors"
-                                                    title="Quitar columna"
-                                                >
-                                                    <X className="w-3 h-3" />
-                                                </button>
-                                            </div>
-                                        )
-                                    })}
-                                    {(selectedWidget.tableColumns || []).length === 0 && (
-                                        <p className="text-xs text-slate-400 text-center py-2 italic">Sin columnas seleccionadas. Se mostrarán por defecto.</p>
-                                    )}
-                                </div>
-
+        {/* COLUMNA 4: NUEVA - Ranking de Asesores */}
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col transition-colors">
+            <div className="flex items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-700 pb-4">
+                <Users className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">Top Asesores</h3>
+            </div>
+            <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-4">
+                {topAsesores.length === 0 ? (
+                    <div className="text-center py-10 text-slate-400"><AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-30" /><p className="text-sm font-medium">Sin ventas asignadas</p></div>
+                ) : (
+                    topAsesores.map(([asesor, stat], idx) => (
+                        <div key={asesor} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-100 dark:border-slate-700">
+                            <div className="flex items-center gap-3">
+                                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${idx === 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400' : idx === 1 ? 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300' : idx === 2 ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-400' : 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400'}`}>
+                                    {idx + 1}
+                                </span>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Agregar Columna</label>
-                                    <select 
-                                        className="block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs p-1.5 border"
-                                        onChange={(e) => {
-                                            if(e.target.value) {
-                                                const newCols = [...(selectedWidget.tableColumns || []), e.target.value];
-                                                updateWidget(selectedWidget.id, { tableColumns: newCols });
-                                                e.target.value = '';
-                                            }
-                                        }}
-                                        value=""
-                                    >
-                                        <option value="">Seleccione para agregar...</option>
-                                        {AVAILABLE_FIELDS
-                                            .filter(f => !(selectedWidget.tableColumns || []).includes(f.key))
-                                            .sort((a,b) => a.label.localeCompare(b.label))
-                                            .map(f => (
-                                                <option key={f.key} value={f.key}>{f.label}</option>
-                                        ))}
-                                    </select>
+                                    <p className="text-[11px] font-bold text-slate-800 dark:text-slate-200 uppercase truncate max-w-[120px]">{asesor}</p>
+                                    <p className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 mt-0.5">{formatCompact(stat.monto)} MXN</p>
                                 </div>
                             </div>
-                        ) : (
-                            <>
-                                {selectedWidget.type !== 'kpi' && (
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Dimensión (Agrupar por)</label>
-                                        <select
-                                            value={selectedWidget.dimension}
-                                            onChange={(e) => updateWidget(selectedWidget.id, { dimension: e.target.value as any })}
-                                            className="block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border"
-                                        >
-                                            <option value="">Seleccione...</option>
-                                            {AVAILABLE_FIELDS.filter(f => f.type === 'catalog' || f.key === 'idPropiedad').map(f => (
-                                                <option key={f.key} value={f.key}>{f.label}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Métrica</label>
-                                        <select
-                                            value={selectedWidget.metric}
-                                            onChange={(e) => updateWidget(selectedWidget.id, { metric: e.target.value as MetricType })}
-                                            className="block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border"
-                                        >
-                                            <option value="count">Conteo</option>
-                                            <option value="sum">Suma</option>
-                                            <option value="avg">Promedio</option>
-                                        </select>
-                                    </div>
-                                    
-                                    {selectedWidget.metric !== 'count' && (
-                                        <div className="space-y-2">
-                                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Campo Valor</label>
-                                            <select
-                                                value={selectedWidget.metricField}
-                                                onChange={(e) => updateWidget(selectedWidget.id, { metricField: e.target.value as any })}
-                                                className="block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border"
-                                            >
-                                                {AVAILABLE_FIELDS.filter(f => f.type === 'number').map(f => (
-                                                    <option key={f.key} value={f.key}>{f.label}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    )}
-                                </div>
-                            </>
-                        )}
-                   </div>
-
-                   <hr className="border-slate-100" />
-
-                   <div className="space-y-4">
-                        <div className="flex justify-between items-center">
-                            <h4 className="font-bold text-sm text-slate-800 flex items-center">
-                                <Filter className="w-4 h-4 mr-2 text-indigo-500" />
-                                Filtros (Lógica AND)
-                            </h4>
-                            <button onClick={() => addFilter(selectedWidget.id)} className="text-xs font-bold text-indigo-600 hover:underline flex items-center">
-                                <Plus className="w-3 h-3 mr-1" /> Agregar
-                            </button>
+                            <span className="text-lg font-black text-slate-900 dark:text-white">{stat.cantidad}</span>
                         </div>
-                        
-                        <div className="space-y-2 bg-slate-50 p-2 rounded-md border border-slate-200 min-h-[100px]">
-                            {selectedWidget.filters.length === 0 && (
-                                <p className="text-xs text-slate-400 text-center py-4 italic">No hay filtros activos.</p>
-                            )}
-                            {selectedWidget.filters.map((filter, idx) => (
-                                <div key={filter.id} className="bg-white p-2 rounded border border-slate-200 shadow-sm relative group">
-                                    {idx > 0 && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-200 text-[10px] px-2 rounded-full font-bold text-slate-600 z-10">Y</div>}
-                                    
-                                    <div className="grid grid-cols-1 gap-2">
-                                        <div className="flex gap-2">
-                                            <select 
-                                                className="w-1/2 text-xs border-slate-300 rounded focus:ring-indigo-500"
-                                                value={filter.field}
-                                                onChange={(e) => updateFilter(selectedWidget.id, filter.id, { field: e.target.value as any, value: '' })}
-                                            >
-                                                {AVAILABLE_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
-                                            </select>
-                                            <select 
-                                                className="w-1/2 text-xs border-slate-300 rounded focus:ring-indigo-500"
-                                                value={filter.operator}
-                                                onChange={(e) => updateFilter(selectedWidget.id, filter.id, { operator: e.target.value as OperatorType })}
-                                            >
-                                                <option value="equals">Igual a</option>
-                                                <option value="neq">Diferente de</option>
-                                                <option value="contains">Contiene</option>
-                                                <option value="gt">Mayor que</option>
-                                                <option value="lt">Menor que</option>
-                                            </select>
-                                        </div>
-                                        
-                                        {(() => {
-                                            const fieldType = AVAILABLE_FIELDS.find(f => f.key === filter.field)?.type;
-                                            
-                                            if (fieldType === 'catalog' && catalogs[filter.field as string]) {
-                                                return (
-                                                    <select
-                                                        className="w-full text-xs border-slate-300 rounded focus:ring-indigo-500"
-                                                        value={String(filter.value)}
-                                                        onChange={(e) => updateFilter(selectedWidget.id, filter.id, { value: e.target.value })}
-                                                    >
-                                                        <option value="">Seleccione...</option>
-                                                        {catalogs[filter.field as string].map(val => (
-                                                            <option key={val} value={val}>{val}</option>
-                                                        ))}
-                                                    </select>
-                                                )
-                                            }
-                                            
-                                            if (fieldType === 'boolean') {
-                                                return (
-                                                    <select
-                                                         className="w-full text-xs border-slate-300 rounded focus:ring-indigo-500"
-                                                         value={String(filter.value)}
-                                                         onChange={(e) => updateFilter(selectedWidget.id, filter.id, { value: e.target.value })}
-                                                    >
-                                                        <option value="">Seleccione...</option>
-                                                        <option value="true">Verdadero</option>
-                                                        <option value="false">Falso</option>
-                                                    </select>
-                                                )
-                                            }
+                    ))
+                )}
+            </div>
+        </div>
 
-                                            return (
-                                                <input 
-                                                    type={fieldType === 'number' ? 'number' : 'text'}
-                                                    className="w-full text-xs border-slate-300 rounded focus:ring-indigo-500 px-2 py-1"
-                                                    placeholder="Valor..."
-                                                    value={filter.value}
-                                                    onChange={(e) => updateFilter(selectedWidget.id, filter.id, { value: e.target.value })}
-                                                />
-                                            )
-                                        })()}
-                                    </div>
-                                    <button 
-                                        onClick={() => removeFilter(selectedWidget.id, filter.id)}
-                                        className="absolute -top-1 -right-1 bg-red-100 text-red-500 rounded-full p-0.5 hover:bg-red-200 shadow-sm"
-                                    >
-                                        <X className="w-3 h-3" />
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                   </div>
-
-                   <div className="space-y-3 pt-4 border-t border-slate-100">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Ancho del Widget</label>
-                        <div className="flex bg-slate-100 p-1 rounded">
-                            <button onClick={() => updateWidget(selectedWidget.id, { width: 'third' })} className={`flex-1 py-1 text-xs rounded ${selectedWidget.width === 'third' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}>1/3</button>
-                            <button onClick={() => updateWidget(selectedWidget.id, { width: 'half' })} className={`flex-1 py-1 text-xs rounded ${selectedWidget.width === 'half' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}>1/2</button>
-                            <button onClick={() => updateWidget(selectedWidget.id, { width: 'full' })} className={`flex-1 py-1 text-xs rounded ${selectedWidget.width === 'full' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}>Full</button>
-                        </div>
-                   </div>
-              </div>
-          </div>
-      )}
-
+      </div>
     </div>
   );
 };

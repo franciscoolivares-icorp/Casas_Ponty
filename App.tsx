@@ -1,4 +1,4 @@
-import logoPonty from './Recursos/casas_ponty.png';
+import logoPonty from './Recursos/casas_ponty.png'; // <-- Ajusta la ruta si la cambiaste
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { 
@@ -20,8 +20,48 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState<'home' | 'schema' | 'list' | 'form' | 'config' | 'test' | 'reporter' | 'usuarios'>('home');
   const [currentUser, setCurrentUser] = useState<any>(null);
-  
   const [isDarkMode, setIsDarkMode] = useState(false);
+
+  // --- 1. LÓGICA PARA RECORDAR SESIÓN ---
+  useEffect(() => {
+    // Al cargar la app, revisamos si hay un usuario guardado
+    const savedUser = localStorage.getItem('ponty_session');
+    if (savedUser) {
+      setCurrentUser(JSON.parse(savedUser));
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  // --- 2. LÓGICA PARA EL BOTÓN "ATRÁS" DEL NAVEGADOR ---
+  // A. Leer la URL al entrar
+  useEffect(() => {
+    const hash = window.location.hash.replace('#', '') as any;
+    const validTabs = ['home', 'schema', 'list', 'form', 'config', 'test', 'reporter', 'usuarios'];
+    if (validTabs.includes(hash)) {
+      setActiveTab(hash);
+    }
+  }, []);
+
+  // B. Actualizar la URL cuando cambiamos de pestaña manualmente
+  useEffect(() => {
+    if (isAuthenticated) {
+      window.location.hash = activeTab;
+    }
+  }, [activeTab, isAuthenticated]);
+
+  // C. Escuchar cuando el usuario presiona el botón "Atrás" o "Adelante"
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '') as any;
+      const validTabs = ['home', 'schema', 'list', 'form', 'config', 'test', 'reporter', 'usuarios'];
+      if (validTabs.includes(hash)) {
+        setActiveTab(hash);
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+  // --------------------------------------------------------
 
   useEffect(() => {
     if (isDarkMode) {
@@ -100,38 +140,99 @@ function App() {
     }
   }, [isAuthenticated]);
 
+  const logMovimiento = async (idPropiedad: string, accion: string, detalles: string) => {
+    if (!idPropiedad) return;
+    await supabase.from('bitacora_movimientos').insert([{
+      idPropiedad,
+      usuario: currentUser?.nombre || 'SISTEMA',
+      accion,
+      detalles
+    }]);
+  };
+
   const handleAddProperty = async (newProperty: Partial<Propiedad>) => {
-    const { error } = await supabase.from('propiedades').insert([newProperty]);
+    const { data, error } = await supabase.from('propiedades').insert([newProperty]).select();
     if (error) alert('Error al guardar: ' + error.message);
-    else { fetchProperties(); setActiveTab('list'); }
+    else { 
+      if (data && data[0]) {
+        await logMovimiento(data[0].idPropiedad, 'ALTA DE PROPIEDAD', `Propiedad agregada con estatus ${data[0].estado}`);
+      }
+      fetchProperties(); 
+      setActiveTab('list'); 
+    }
   };
 
   const handleUpdateProperty = async (updatedProperty: Partial<Propiedad>) => {
     const { idPropiedad, ...restOfData } = updatedProperty;
+    const oldProp = properties.find(p => p.idPropiedad === idPropiedad);
+
     const { error } = await supabase.from('propiedades').update(restOfData).eq('idPropiedad', idPropiedad);
     if (error) alert('Error al actualizar: ' + error.message);
-    else { fetchProperties(); if (activeTab === 'form') setActiveTab('list'); }
+    else { 
+      if (oldProp) {
+        if (oldProp.estado !== updatedProperty.estado && updatedProperty.estado) {
+          await logMovimiento(idPropiedad as string, 'CAMBIO DE ESTATUS', `Pasó de ${oldProp.estado || 'N/A'} a ${updatedProperty.estado}`);
+        }
+        if (oldProp.precioFinal !== updatedProperty.precioFinal && updatedProperty.precioFinal !== undefined) {
+          await logMovimiento(idPropiedad as string, 'CAMBIO DE PRECIO', `Pasó de $${oldProp.precioFinal || 0} a $${updatedProperty.precioFinal}`);
+        }
+      }
+      fetchProperties(); 
+      if (activeTab === 'form') setActiveTab('list'); 
+    }
   };
 
   const handleDeleteProperty = async (id: string) => {
     if (window.confirm('¿Eliminar permanentemente este registro?')) {
       const { error } = await supabase.from('propiedades').delete().eq('idPropiedad', id);
       if (error) alert('Error al eliminar: ' + error.message);
-      else fetchProperties();
+      else {
+        await logMovimiento(id, 'ELIMINACIÓN', 'Propiedad borrada del sistema');
+        fetchProperties();
+      }
     }
   };
 
   const handleBulkUpdateProperties = async (ids: string[], field: keyof Propiedad, value: any) => {
     const { error } = await supabase.from('propiedades').update({ [field]: value }).in('idPropiedad', ids);
     if (error) alert('Error en actualización masiva: ' + error.message);
-    else fetchProperties();
+    else {
+      for (const id of ids) {
+        await logMovimiento(id, 'EDICIÓN MASIVA', `Campo '${field}' actualizado a: ${value}`);
+      }
+      fetchProperties();
+    }
   };
   
-  const handleBulkImport = (importedData: any[]) => { /* Lógica importación */ };
+  const handleBulkImport = async (importedData: any[]) => {
+    try {
+      const { error } = await supabase.from('propiedades').upsert(importedData, { onConflict: 'idPropiedad' });
+      if (error) throw error;
+      alert(`¡Se importaron/actualizaron ${importedData.length} propiedades con éxito!`);
+      fetchProperties();
+    } catch (error: any) {
+      alert('Error en la importación a la base de datos: ' + error.message);
+    }
+  };
+
   const startEditing = (prop: Propiedad) => { setEditingProperty(prop); setActiveTab('form'); };
 
+  // --- CERRAR SESIÓN ---
+  const handleLogout = () => {
+    localStorage.removeItem('ponty_session'); // Borramos la memoria
+    setIsAuthenticated(false);
+    setCurrentUser(null);
+    setActiveTab('home');
+    window.location.hash = ''; // Limpiamos la URL
+  };
+
   if (!isAuthenticated) {
-    return <Login onLoginSuccess={(user) => { setCurrentUser(user); setIsAuthenticated(true); }} />;
+    return <Login onLoginSuccess={(user) => { 
+      setCurrentUser(user); 
+      setIsAuthenticated(true); 
+      // Al hacer login exitoso, lo guardamos en la memoria local
+      localStorage.setItem('ponty_session', JSON.stringify(user));
+    }} />;
   }
 
   return (
@@ -141,7 +242,6 @@ function App() {
           <div className="flex justify-between h-16">
             <div className="flex items-center overflow-x-auto no-scrollbar">
               
-              {/* AQUÍ AGREGAMOS TU LOGO */}
               <button onClick={() => setActiveTab('home')} className="flex-shrink-0 flex items-center hover:opacity-80 transition-opacity focus:outline-none mr-8">
                 <img 
                   src={logoPonty} 
@@ -161,7 +261,6 @@ function App() {
                   <FlaskConical className="w-4 h-4 mr-2" /> <span className="hidden md:inline">Apartar</span>
                 </button>
                 
-                {/* PESTAÑAS PROTEGIDAS (SOLO ADMIN) */}
                 {currentUser?.es_admin && (
                   <>
                     <button onClick={() => setActiveTab('reporter')} className={`${activeTab === 'reporter' ? 'border-indigo-500 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors`}>
@@ -188,12 +287,7 @@ function App() {
               <span className="text-xs font-bold text-slate-500 dark:text-slate-400 hidden sm:block mr-2">
                 {currentUser?.nombre}
               </span>
-              {/* Dark dark mode
-              <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 rounded-md text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all focus:outline-none">
-                {isDarkMode ? <Sun className="w-5 h-5 text-yellow-400" /> : <Moon className="w-5 h-5" />}
-              </button>
-              */}
-              <button onClick={() => { setIsAuthenticated(false); setCurrentUser(null); setActiveTab('home'); }} className="p-2 rounded-md text-slate-500 dark:text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all">
+              <button onClick={handleLogout} className="p-2 rounded-md text-slate-500 dark:text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all">
                 <LogOut className="w-5 h-5" />
               </button>
             </div>
@@ -215,13 +309,14 @@ function App() {
                 onBulkImport={handleBulkImport} 
                 onBulkUpdate={handleBulkUpdateProperties} 
                 isAdmin={currentUser?.es_admin}
+                currentUser={currentUser}
               />
             )}
             
             {activeTab === 'form' && <PropertyForm initialData={editingProperty} catalogs={catalogs} modelAssignments={modelAssignments} statusAssignments={statusAssignments} metodoCompraAssignments={metodoCompraAssignments} onSubmit={editingProperty ? handleUpdateProperty : handleAddProperty} onCancel={() => setActiveTab('list')} isEditing={!!editingProperty} />}
             {activeTab === 'config' && <CatalogManager onCatalogChanged={fetchCatalogs} />}
             {activeTab === 'schema' && <SchemaTable />}
-            {activeTab === 'test' && <Apartados properties={properties} catalogs={catalogs} onUpdateProperty={handleUpdateProperty} />}
+            {activeTab === 'test' && <Apartados properties={properties} catalogs={catalogs} onUpdateProperty={handleUpdateProperty} currentUser={currentUser} />}
             {activeTab === 'reporter' && <ReporterView properties={properties} catalogs={catalogs} />}
         </main>
       </div>
