@@ -162,91 +162,59 @@ export enum Asesor {
   YAZZ_DE_LA_TORRE = "YAZZ DE LA TORRE"
 }
 
-// Interfaz Principal de la Base de Datos (Schema)
 export interface Propiedad {
-  // Identificadores y Clasificación
-  idPropiedad: string; // pnty-000001 (Generado)
-  created_at?: string; // IMPORTANTE para auditorías de Supabase
-  
-  desarrollo?: string | null; // Dynamic Catalog
-  nivel?: string | null; // Dynamic Catalog
-  modelo?: string | null; // Dynamic Catalog
-  modeloAgrupador?: string | null; // Dynamic Catalog
-  
-  // Estado
-  estado: string; // Dynamic Catalog
-  estadoAgrupador?: string | null; // Dynamic Catalog
-  
-  // Financiero
+  idPropiedad: string;
+  desarrollo?: string;
+  nivel?: string;
+  modelo?: string;
+  estado?: string;
   precioLista?: number;
-  descuento?: number; // Negativo
+  descuento?: number;
   precioFinal?: number;
   precioOperacion?: number;
-  m2TerrExc?: number; // 1 decimal
+  m2TerrExc?: number;
   precioXM2Exc?: number;
   precioTerrExc?: number;
   precioObrasAdicionales?: number;
-  obrasAdicionales?: string | null; // CORREGIDO para empatar con DB
-  ek?: string | null; // ID ERP (Texto)
-  
-  // Datos Comprador
-  nombreComprador?: string | null;
-  titulacion?: string | null; 
-  fechaDesde?: string | null; 
-  diasDesdeRevisar?: number; // CAMPO CALCULADO
-  
-  // Avalúo
-  dtu?: boolean; 
-  dtuAvaluo?: string | null; // Dynamic Catalog
+  obrasAdicionales?: string;
+  observaciones?: string;
+  dtu?: boolean;
+  dtuAvaluo?: string;
   valorAvaluo?: number;
-  
-  // Fechas y Tiempos (Calculados o Inputs)
-  contadorDiasMaximoApartado?: number; // Calculado
-  diasAutorizadosApartado?: number; // Nuevo Campo Editable
-  diasAtrasoApartado?: number; // Calculado
-  diasRezagoApartado?: number; // Campo Calculado
-  
-  // Compra
-  metodoCompra?: string | null; // Dynamic Catalog
-  metodoCompraAgrupador?: string | null; // Dynamic Catalog (Nuevo)
-  banco?: string | null; // Dynamic Catalog
-  
-  // Ubicación
-  calle?: string | null;
-  manzana?: string | null;
-  lote?: string | null;
-  edificio?: string | null;
-  numeroExterior?: string | null;
-  numeroInterior?: string | null;
-  condomino?: string | null;
-  
-  // Extras
+  metodoCompra?: string;
+  banco?: string;
   asesorExterno?: boolean;
-  asesor?: string | null; // Dynamic Catalog
-  observaciones?: string | null; // NUEVO CAMPO AGREGADO
-  retroAsesor?: string | null; 
-  
-  // Broker
-  nombreBrokerBanco?: string | null;
-  telefonoBrokerBanco?: string | null; // 10 dígitos
-  correoBrokerBanco?: string | null;
-  
-  // Auditoria
-  tipoUsuario?: string | null; // Dynamic Catalog
-  
-  // Documentos (Simulados como strings/urls o booleanos para upload)
-  comprobanteApartado?: string | null; // imagen/documento
-  mailAutorizaFovissste?: string | null; // imagen/documento
-  autorizacionBanco?: string | null; // imagen/documento
-  
-  // Fechas Clave 
-  fechaApartado?: string | null; // Date string ISO
-  fechaVenta?: string | null; // Date string ISO
-  fechaEscritura?: string | null; // Date string ISO
-
-  // Archivos
+  asesor?: string;
+  calle?: string;
+  manzana?: string;
+  lote?: string;
+  condomino?: string;
+  edificio?: string;
+  numeroExterior?: string;
+  numeroInterior?: string;
+  nombreComprador?: string;
+  ek?: string;
+  diasAutorizadosApartado?: number;
   url_comprobante_apartado?: string | null;
   url_autorizacion_bancaria?: string | null;
   url_mail_fovissste?: string | null;
   url_solicitud_reubicacion?: string | null;
+  
+  // --- NUEVOS CAMPOS PARA EL DETALLE ---
+  modeloAgrupador?: string;
+  estadoAgrupador?: string;
+  metodoCompraAgrupador?: string;
+  fechaApartado?: string | null;
+  fechaVenta?: string | null;
+  fechaEscritura?: string | null;
+  fechaDesde?: string | null;
+  tipoUsuario?: string;
+  retroAsesor?: string;
+  titulacion?: string;
+  nombreBrokerBanco?: string;
+  telefonoBrokerBanco?: string;
+  correoBrokerBanco?: string;
+  
+  // Campos Calculados (No van en la BD, pero sirven en React)
+  diasDesdeRevisar?: number;
 }

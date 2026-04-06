@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Propiedad } from '../types';
 import { supabase } from '../supabaseClient';
 import { 
-  Save, X, Home, DollarSign, MapPin, User, 
-  FileText, CalendarClock, Layers, AlertCircle, 
-  FolderOpen, UploadCloud, CheckCircle2 
+  Save, Home, DollarSign, MapPin, User, 
+  FileText, Layers, AlertCircle, FolderOpen, 
+  UploadCloud, CheckCircle2, Check, X, ArrowLeft, Clock
 } from 'lucide-react';
 
 interface PropertyFormProps {
@@ -16,10 +16,62 @@ interface PropertyFormProps {
   onSubmit: (property: Partial<Propiedad>) => void;
   onCancel: () => void;
   isEditing: boolean;
+  isViewing?: boolean;
 }
 
+// --- COMPONENTE: ENVOLTORIO INTELIGENTE (MODO LECTURA Y EDICIÓN EN LÍNEA) ---
+const InlineField = ({
+  isEditing,
+  isViewing,
+  value,
+  type = 'text',
+  onChange,
+  onSave,
+  children
+}: {
+  isEditing: boolean;
+  isViewing?: boolean;
+  value: any;
+  type?: 'text' | 'currency' | 'boolean' | 'date' | 'number';
+  onChange: (val: any) => void;
+  onSave: (val: any) => void;
+  children: (val: any, changeHandler: (v: any) => void) => React.ReactNode;
+}) => {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => { setDraft(value); }, [value]);
+
+  // SI ESTAMOS EN MODO LECTURA, SOLO DIBUJAMOS EL TEXTO LIMPIO
+  if (isViewing) {
+     let disp = value;
+     if (type === 'currency') disp = new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN', maximumFractionDigits: 0}).format(Number(value) || 0);
+     else if (type === 'boolean') disp = value ? 'Sí' : 'No';
+     else if (type === 'date') disp = value ? String(value).split('T')[0] : '-';
+     else disp = value || '-';
+     
+     return <div className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase py-2">{disp}</div>;
+  }
+
+  const isPending = isEditing && draft !== value;
+  const handleChange = (v: any) => { if (!isEditing) onChange(v); else setDraft(v); };
+  const handleConfirm = (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); onChange(draft); onSave(draft); };
+  const handleCancel = (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); setDraft(value); };
+
+  return (
+    <div className="relative w-full flex items-center group">
+      <div className="w-full">{children(isEditing ? draft : value, handleChange)}</div>
+      {isPending && (
+        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 z-20 bg-slate-800 p-1 rounded-lg shadow-xl border border-slate-600 animate-in zoom-in-95">
+          <button type="button" onClick={handleConfirm} className="p-1 text-white bg-emerald-500 hover:bg-emerald-600 rounded transition-colors" title="Confirmar"><Check className="w-4 h-4"/></button>
+          <button type="button" onClick={handleCancel} className="p-1 text-white bg-red-500 hover:bg-red-600 rounded transition-colors" title="Descartar"><X className="w-4 h-4"/></button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const PropertyForm: React.FC<PropertyFormProps> = ({ 
-  initialData, catalogs, modelAssignments, onSubmit, onCancel, isEditing 
+  initialData, catalogs, modelAssignments, onSubmit, onCancel, isEditing, isViewing = false
 }) => {
   const [formData, setFormData] = useState<Partial<Propiedad>>(
     initialData || {
@@ -32,12 +84,28 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
       lote: '', condomino: '', edificio: '', numeroExterior: '', numeroInterior: '',
       nombreComprador: '', ek: '', tipoUsuario: '', diasAutorizadosApartado: 7,
       url_comprobante_apartado: null, url_autorizacion_bancaria: null, 
-      url_mail_fovissste: null, url_solicitud_reubicacion: null
+      url_mail_fovissste: null, url_solicitud_reubicacion: null,
+      modeloAgrupador: '', estadoAgrupador: '', metodoCompraAgrupador: '',
+      fechaApartado: null, fechaVenta: null, fechaEscritura: null, fechaDesde: null,
+      retroAsesor: '', titulacion: '', nombreBrokerBanco: '', telefonoBrokerBanco: '', correoBrokerBanco: ''
     }
   );
 
   const [formError, setFormError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState<Record<string, boolean>>({});
+
+  // --- CÁLCULO DE FECHAS EN VIVO ---
+  const today = new Date();
+  const getDiffDays = (dateStr?: string | null) => {
+      if (!dateStr) return null;
+      // Ajuste de zona horaria para evitar desfases
+      const d = new Date(dateStr + 'T12:00:00');
+      return Math.floor((today.getTime() - d.getTime()) / (1000 * 3600 * 24));
+  };
+
+  const diasApartado = getDiffDays(formData.fechaApartado) ?? 0;
+  const diasRezago = formData.fechaApartado ? diasApartado - (formData.diasAutorizadosApartado || 0) : 0;
+  const diasDesdeRevisar = formData.fechaDesde ? (getDiffDays(formData.fechaDesde) || 0) + 1 : 0;
 
   useEffect(() => {
     const pLista = Number(formData.precioLista) || 0;
@@ -50,15 +118,13 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
     const final = pLista + desc + terrExc + pObras;
 
     setFormData(prev => ({
-      ...prev,
-      precioTerrExc: terrExc,
-      precioFinal: final,
+      ...prev, precioTerrExc: terrExc, precioFinal: final,
       precioOperacion: ['DISPONIBLE', 'PRODUCCIÓN'].includes(prev.estado || '') ? 0 : (prev.precioOperacion || final) 
     }));
   }, [formData.precioLista, formData.descuento, formData.m2TerrExc, formData.precioXM2Exc, formData.precioObrasAdicionales, formData.estado]);
 
-  // --- LÓGICA DE SUBIDA A SUPABASE STORAGE ---
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: keyof Propiedad) => {
+    if (isViewing) return;
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -68,69 +134,30 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
     try {
       const fileExt = file.name.split('.').pop();
       const fileName = `${formData.idPropiedad}_${field}_${Math.random()}.${fileExt}`;
-      const filePath = `${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('expedientes_ponty')
-        .upload(filePath, file);
-
+      const { error: uploadError } = await supabase.storage.from('expedientes_ponty').upload(fileName, file);
       if (uploadError) throw uploadError;
+      const { data: publicUrlData } = supabase.storage.from('expedientes_ponty').getPublicUrl(fileName);
 
-      const { data: publicUrlData } = supabase.storage
-        .from('expedientes_ponty')
-        .getPublicUrl(filePath);
-
-      setFormData(prev => ({ ...prev, [field]: publicUrlData.publicUrl }));
-    } catch (error: any) {
-      setFormError('Error al subir archivo: ' + error.message);
-    } finally {
-      setIsUploading(prev => ({ ...prev, [field]: false }));
-    }
+      const updatedData = { ...formData, [field]: publicUrlData.publicUrl };
+      setFormData(updatedData);
+      if (isEditing) validateAndSubmit(updatedData);
+      
+    } catch (error: any) { setFormError('Error al subir archivo: ' + error.message); } 
+    finally { setIsUploading(prev => ({ ...prev, [field]: false })); }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const validateAndSubmit = (dataToSubmit: Partial<Propiedad>) => {
     setFormError(null); 
-
-    const nivelesExcedentes = ['CASA EXC', 'PBF EXC', 'PBP EXC'];
-    if (nivelesExcedentes.includes(formData.nivel || '')) {
-      if (!formData.m2TerrExc || formData.m2TerrExc <= 0) return setFormError("Al seleccionar Nivel con Excedente, los M2 deben ser mayores a cero.");
-      if (!formData.precioXM2Exc || formData.precioXM2Exc <= 0) return setFormError("Al seleccionar Nivel con Excedente, el Precio por M2 debe ser mayor a cero.");
-    }
-
-    if (formData.dtuAvaluo === 'AVALÚO CERRADO') {
-      if (!formData.valorAvaluo || formData.valorAvaluo <= 0) return setFormError("Si el DTU/Avalúo está 'AVALÚO CERRADO', el Valor no puede ser cero.");
-    }
-
-    // --- REGLAS DE OBLIGATORIEDAD DE ARCHIVOS ---
-    if (formData.dtuAvaluo === 'SIN DTU' && !formData.url_comprobante_apartado) {
-      return setFormError("Regla de Negocio: Si la propiedad está 'SIN DTU', el Comprobante de Apartado es obligatorio.");
-    }
-
-    const requiereAutBanco = ['BANCARIO', 'COFINAVIT', 'INFO + BANCO'].includes(formData.metodoCompra || '');
-    if (requiereAutBanco && !formData.url_autorizacion_bancaria) {
-      return setFormError(`Regla de Negocio: Para el método ${formData.metodoCompra}, la Autorización Bancaria es obligatoria.`);
-    }
-
-    if (formData.metodoCompra === 'FOVISSSTE TRADICIONAL' && !formData.url_mail_fovissste) {
-      return setFormError("Regla de Negocio: Para FOVISSSTE TRADICIONAL, el Mail FOVISSSTE es obligatorio.");
-    }
-
-    let finalData = { ...formData };
-    if (['DISPONIBLE', 'PRODUCCIÓN'].includes(finalData.estado || '')) {
-      finalData.precioOperacion = 0;
-    } else if (finalData.estado === 'APARTADO' && !isEditing) {
-      finalData.precioOperacion = finalData.precioFinal;
-    }
-
+    const finalData = { ...dataToSubmit };
+    if (['DISPONIBLE', 'PRODUCCIÓN'].includes(finalData.estado || '')) finalData.precioOperacion = 0;
+    else if (finalData.estado === 'APARTADO' && !isEditing) finalData.precioOperacion = finalData.precioFinal;
     onSubmit(finalData);
   };
 
-  const getModelosDisponibles = () => {
-    if (!formData.desarrollo) return catalogs.modelo || [];
-    return modelAssignments[formData.desarrollo] || catalogs.modelo || [];
-  };
+  const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); validateAndSubmit(formData); };
+  const getModelosDisponibles = () => formData.desarrollo ? modelAssignments[formData.desarrollo] || catalogs.modelo || [] : catalogs.modelo || [];
 
+  // --- FUNCIÓN DE RENDERIZADO DE ARCHIVOS RECUPERADA ---
   const renderFileUpload = (field: keyof Propiedad, label: string, isRequired: boolean) => {
     const isUploadingThis = isUploading[field];
     const hasFile = !!formData[field];
@@ -138,7 +165,7 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
     return (
       <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
         <label className="block text-[11px] font-black text-slate-500 uppercase tracking-wider mb-2">
-          {label} {isRequired && <span className="text-red-500 ml-1">* Obligatorio</span>}
+          {label} {isRequired && !isViewing && <span className="text-red-500 ml-1">* Obligatorio</span>}
         </label>
         {hasFile ? (
           <div className="flex items-center justify-between bg-emerald-50 dark:bg-emerald-900/20 p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-800/50">
@@ -148,261 +175,442 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
             </div>
             <div className="flex gap-3">
                <a href={formData[field] as string} target="_blank" rel="noreferrer" className="text-xs font-black text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 uppercase tracking-wider">Ver</a>
-               <button type="button" onClick={() => setFormData({...formData, [field]: null})} className="text-xs font-black text-red-600 hover:text-red-800 dark:text-red-400 uppercase tracking-wider">Borrar</button>
+               {!isViewing && (
+                 <button type="button" onClick={() => {
+                   const updated = {...formData, [field]: null};
+                   setFormData(updated);
+                   if (isEditing) validateAndSubmit(updated);
+                 }} className="text-xs font-black text-red-600 hover:text-red-800 dark:text-red-400 uppercase tracking-wider">Borrar</button>
+               )}
             </div>
           </div>
         ) : (
-          <div className="relative flex items-center justify-center w-full h-11 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg hover:bg-white dark:hover:bg-slate-800 transition-colors cursor-pointer overflow-hidden bg-white dark:bg-slate-800">
-             {isUploadingThis ? (
-               <span className="text-xs font-bold text-slate-500 animate-pulse">Subiendo a la nube...</span>
-             ) : (
-               <>
-                 <UploadCloud className="w-4 h-4 text-indigo-500 mr-2" />
-                 <span className="text-xs font-bold text-slate-600 dark:text-slate-400">Clic para adjuntar PDF/Foto</span>
-                 <input type="file" accept=".pdf,image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={(e) => handleFileUpload(e, field)} disabled={isUploadingThis} />
-               </>
-             )}
-          </div>
+          isViewing ? (
+             <div className="text-sm font-black text-slate-400 dark:text-slate-500 uppercase py-2">Sin documento</div>
+          ) : (
+            <div className="relative flex items-center justify-center w-full h-11 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg hover:bg-white dark:hover:bg-slate-800 transition-colors cursor-pointer overflow-hidden bg-white dark:bg-slate-800">
+               {isUploadingThis ? (
+                 <span className="text-xs font-bold text-slate-500 animate-pulse">Subiendo a la nube...</span>
+               ) : (
+                 <>
+                   <UploadCloud className="w-4 h-4 text-indigo-500 mr-2" />
+                   <span className="text-xs font-bold text-slate-600 dark:text-slate-400">Clic para adjuntar PDF/Foto</span>
+                   <input type="file" accept=".pdf,image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={(e) => handleFileUpload(e, field)} disabled={isUploadingThis} />
+                 </>
+               )}
+            </div>
+          )
         )}
       </div>
     );
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in duration-500 transition-colors flex flex-col h-[85vh]">
-      
-      <div className="bg-slate-50 dark:bg-slate-800 px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center shrink-0">
-        <div>
-          <h2 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-2">
-            <Home className="w-5 h-5 text-indigo-600 dark:text-indigo-400" /> 
-            {isEditing ? 'Editar Propiedad' : 'Nueva Propiedad'}
-          </h2>
-          <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-1 uppercase tracking-wider">
-            ID: <span className="text-indigo-600 dark:text-indigo-400">{formData.idPropiedad}</span>
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <button type="button" onClick={onCancel} className="px-5 py-2.5 border border-slate-300 dark:border-slate-600 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center">
-            <X className="w-4 h-4 mr-2" /> Cancelar
-          </button>
-          <button type="submit" className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-200 dark:shadow-none transition-all active:scale-95 flex items-center">
-            <Save className="w-4 h-4 mr-2" /> Guardar
-          </button>
-        </div>
-      </div>
-
-      {formError && (
-        <div className="bg-red-50 dark:bg-red-900/30 border-b border-red-200 dark:border-red-900/50 p-4 shrink-0 flex items-start gap-3 animate-in slide-in-from-top-2">
-          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
-          <p className="text-sm font-bold text-red-800 dark:text-red-300">{formError}</p>
-        </div>
-      )}
-
-      <div className="p-6 md:p-8 space-y-10 overflow-y-auto custom-scrollbar flex-1">
+    <>
+      <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in duration-500 transition-colors flex flex-col h-[85vh]">
         
-        <section>
-          <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-2">
-            <Layers className="w-4 h-4 text-indigo-500" /> Clasificación
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Desarrollo</label>
-              <select required className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={formData.desarrollo || ''} onChange={e => setFormData({...formData, desarrollo: e.target.value, modelo: ''})}>
-                <option value="">Seleccione...</option>
-                {catalogs.desarrollo?.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Modelo</label>
-              <select required className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={formData.modelo || ''} onChange={e => setFormData({...formData, modelo: e.target.value})}>
-                <option value="">Seleccione...</option>
-                {getModelosDisponibles().map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Nivel</label>
-              <select required className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={formData.nivel || ''} onChange={e => setFormData({...formData, nivel: e.target.value})}>
-                <option value="">Seleccione...</option>
-                {catalogs.nivel?.map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Estado</label>
-              <select required className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 font-black outline-none focus:ring-2 focus:ring-indigo-500" value={formData.estado || 'DISPONIBLE'} onChange={e => setFormData({...formData, estado: e.target.value})}>
-                {catalogs.estado?.map(e => <option key={e} value={e}>{e}</option>)}
-              </select>
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-2">
-            <DollarSign className="w-4 h-4 text-emerald-500" /> Financiero y Excedentes
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Precio de Lista</label>
-              <div className="relative">
-                <span className="absolute left-3 top-3.5 text-slate-400 font-bold">$</span>
-                <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 pl-8 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500" value={formData.precioLista || ''} onChange={e => setFormData({...formData, precioLista: Number(e.target.value)})} />
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Descuento (-)</label>
-              <div className="relative">
-                <span className="absolute left-3 top-3.5 text-red-400 font-bold">-$</span>
-                <input type="number" className="w-full border border-red-200 dark:border-red-900/50 rounded-xl p-3 pl-9 bg-red-50 dark:bg-red-900/10 text-red-700 dark:text-red-400 font-bold outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500" value={Math.abs(formData.descuento || 0) || ''} onChange={e => setFormData({...formData, descuento: -Math.abs(Number(e.target.value))})} />
-              </div>
-            </div>
-            <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-xl border border-emerald-100 dark:border-emerald-900/50 flex flex-col justify-center items-center shadow-inner">
-              <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-500 uppercase tracking-widest mb-1">Precio Final Estimado</span>
-              <span className="text-2xl font-black text-emerald-700 dark:text-emerald-400">
-                {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(formData.precioFinal || 0)}
-              </span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 bg-slate-50 dark:bg-slate-900/50 p-5 rounded-xl border border-slate-200 dark:border-slate-700">
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">M2 Excedente</label>
-              <input type="number" step="0.01" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" value={formData.m2TerrExc || ''} onChange={e => setFormData({...formData, m2TerrExc: Number(e.target.value)})} />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">$ x M2</label>
-              <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" value={formData.precioXM2Exc || ''} onChange={e => setFormData({...formData, precioXM2Exc: Number(e.target.value)})} />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Monto Obras ($)</label>
-              <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" value={formData.precioObrasAdicionales || ''} onChange={e => setFormData({...formData, precioObrasAdicionales: Number(e.target.value)})} />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Desc. Obras Adic.</label>
-              <textarea 
-                className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white uppercase text-sm outline-none focus:ring-2 focus:ring-indigo-500" 
-                rows={2} 
-                value={formData.obrasAdicionales || ''} 
-                onChange={e => setFormData({...formData, obrasAdicionales: e.target.value.toUpperCase()})} 
-              />
-            </div>
-          </div>
-        </section>
-
-        <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* HEADER MODAL */}
+        <div className="bg-slate-50 dark:bg-slate-800 px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center shrink-0">
           <div>
-            <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-2">
-              <MapPin className="w-4 h-4 text-indigo-500" /> Ubicación
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Calle</label>
-                <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 uppercase" value={formData.calle || ''} onChange={e => setFormData({...formData, calle: e.target.value.toUpperCase()})} />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Num Ext</label>
-                <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 uppercase" value={formData.numeroExterior || ''} onChange={e => setFormData({...formData, numeroExterior: e.target.value.toUpperCase()})} />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Num Int</label>
-                <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 uppercase" value={formData.numeroInterior || ''} onChange={e => setFormData({...formData, numeroInterior: e.target.value.toUpperCase()})} />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Manzana</label>
-                <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 uppercase" value={formData.manzana || ''} onChange={e => setFormData({...formData, manzana: e.target.value.toUpperCase()})} />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Lote</label>
-                <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 uppercase" value={formData.lote || ''} onChange={e => setFormData({...formData, lote: e.target.value.toUpperCase()})} />
-              </div>
-            </div>
+            <h2 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-2">
+              <Home className="w-5 h-5 text-indigo-600 dark:text-indigo-400" /> 
+              {isViewing ? 'Detalle de Propiedad' : isEditing ? 'Editar Propiedad' : 'Nueva Propiedad'}
+            </h2>
+            <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-1 uppercase tracking-wider">
+              ID: <span className="text-indigo-600 dark:text-indigo-400">{formData.idPropiedad}</span>
+            </p>
           </div>
-
-          <div>
-            <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-2">
-              <FileText className="w-4 h-4 text-amber-500" /> Operativo (DTU / Avalúo)
-            </h3>
-            <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-xl border border-slate-200 dark:border-slate-700 space-y-5">
-              <label className="flex items-center gap-3 cursor-pointer p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl hover:bg-indigo-50 dark:hover:bg-slate-700 transition-colors">
-                <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-700" checked={formData.dtu || false} onChange={e => setFormData({...formData, dtu: e.target.checked})} />
-                <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Cuenta con DTU Físico</span>
-              </label>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Estatus DTU Avalúo</label>
-                <select className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={formData.dtuAvaluo || 'SIN DTU'} onChange={e => setFormData({...formData, dtuAvaluo: e.target.value})}>
-                  {catalogs.dtuAvaluo?.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Valor Avalúo ($)</label>
-                <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-amber-500" value={formData.valorAvaluo || ''} onChange={e => setFormData({...formData, valorAvaluo: Number(e.target.value)})} />
-              </div>
-            </div>
+          <div className="flex gap-3">
+            <button type="button" onClick={onCancel} className="px-5 py-2.5 border border-slate-300 dark:border-slate-600 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center">
+              <ArrowLeft className="w-4 h-4 mr-2" /> Regresar
+            </button>
+            {!isEditing && !isViewing && (
+              <button type="submit" className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-200 dark:shadow-none transition-all active:scale-95 flex items-center">
+                <Save className="w-4 h-4 mr-2" /> Guardar
+              </button>
+            )}
           </div>
-        </section>
+        </div>
 
-        <section>
-          <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-2">
-            <User className="w-4 h-4 text-indigo-500" /> Extras y Observaciones
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Comprador</label>
-              <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 uppercase" value={formData.nombreComprador || ''} onChange={e => setFormData({...formData, nombreComprador: e.target.value.toUpperCase()})} />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Método de Compra</label>
-              <select className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" value={formData.metodoCompra || ''} onChange={e => setFormData({...formData, metodoCompra: e.target.value})}>
-                <option value="">Seleccione...</option>
-                {catalogs.metodoCompra?.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                <CalendarClock className="w-4 h-4" /> Días Aut. Apartado
-              </label>
-              <input type="number" min="1" className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" value={formData.diasAutorizadosApartado || 7} onChange={e => setFormData({...formData, diasAutorizadosApartado: Number(e.target.value)})} />
-            </div>
-            <div className="md:col-span-2 lg:col-span-3">
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Observaciones Generales</label>
-              <textarea 
-                className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-4 bg-white dark:bg-slate-800 text-slate-900 dark:text-white uppercase text-sm outline-none focus:ring-2 focus:ring-indigo-500" 
-                rows={2} 
-                value={formData.observaciones || ''} 
-                onChange={e => setFormData({...formData, observaciones: e.target.value.toUpperCase()})} 
-              />
-            </div>
+        {formError && (
+          <div className="bg-red-50 dark:bg-red-900/30 border-b border-red-200 dark:border-red-900/50 p-4 shrink-0 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+            <p className="text-sm font-bold text-red-800 dark:text-red-300">{formError}</p>
           </div>
-        </section>
+        )}
 
-        {/* --- NUEVA SECCIÓN: EXPEDIENTE DIGITAL (ARCHIVOS) --- */}
-        <section className="bg-indigo-50/30 dark:bg-slate-800/50 p-6 rounded-2xl border border-indigo-100 dark:border-slate-700">
-          <h3 className="text-sm font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-widest flex items-center gap-2 mb-6 border-b border-indigo-200 dark:border-slate-600 pb-3">
-            <FolderOpen className="w-5 h-5 text-indigo-500" /> Expediente Digital (Nube)
-          </h3>
+        <div className="p-6 md:p-8 space-y-10 overflow-y-auto custom-scrollbar flex-1">
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {formData.dtuAvaluo === 'SIN DTU' && 
-              renderFileUpload('url_comprobante_apartado', 'Comprobante de Apartado', true)
-            }
-            
-            {['BANCARIO', 'COFINAVIT', 'INFO + BANCO'].includes(formData.metodoCompra || '') && 
-              renderFileUpload('url_autorizacion_bancaria', 'Autorización Bancaria', true)
-            }
+          {/* SECCIÓN 1: IDENTIFICACIÓN */}
+          <section>
+            <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-2">
+              1. Identificación
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">ID Propiedad</label>
+                <div className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase py-2">{formData.idPropiedad}</div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Desarrollo</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.desarrollo || ''} onChange={v => setFormData({...formData, desarrollo: v})} onSave={v => validateAndSubmit({...formData, desarrollo: v})}>
+                  {(val, change) => <select className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-slate-50 dark:bg-slate-900 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)}><option value="">-</option>{catalogs.desarrollo?.map(d => <option key={d} value={d}>{d}</option>)}</select>}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nivel</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.nivel || ''} onChange={v => setFormData({...formData, nivel: v})} onSave={v => validateAndSubmit({...formData, nivel: v})}>
+                  {(val, change) => <select className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-slate-50 dark:bg-slate-900 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)}><option value="">-</option>{catalogs.nivel?.map(n => <option key={n} value={n}>{n}</option>)}</select>}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Modelo</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.modelo || ''} onChange={v => setFormData({...formData, modelo: v})} onSave={v => validateAndSubmit({...formData, modelo: v})}>
+                  {(val, change) => <select className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-slate-50 dark:bg-slate-900 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)}><option value="">-</option>{getModelosDisponibles().map(m => <option key={m} value={m}>{m}</option>)}</select>}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Modelo Agrupador</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.modeloAgrupador || ''} onChange={v => setFormData({...formData, modeloAgrupador: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, modeloAgrupador: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+            </div>
+          </section>
 
-            {formData.metodoCompra === 'FOVISSSTE TRADICIONAL' && 
-              renderFileUpload('url_mail_fovissste', 'Mail FOVISSSTE', true)
-            }
+          {/* SECCIÓN 2: ESTADO ACTUAL */}
+          <section>
+            <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-2">
+              2. Estado Actual
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 items-end">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Estado</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.estado || 'DISPONIBLE'} onChange={v => setFormData({...formData, estado: v})} onSave={v => validateAndSubmit({...formData, estado: v})}>
+                  {(val, change) => <select className="w-full border border-indigo-300 dark:border-indigo-600 rounded-lg p-2 bg-indigo-50 dark:bg-indigo-900/20 text-sm font-bold text-indigo-700 dark:text-indigo-400 outline-none" value={val} onChange={e => change(e.target.value)}>{catalogs.estado?.map(e => <option key={e} value={e}>{e}</option>)}</select>}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Estado Agrupador</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.estadoAgrupador || ''} onChange={v => setFormData({...formData, estadoAgrupador: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, estadoAgrupador: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Fecha Apartado</label>
+                <InlineField type="date" isEditing={isEditing} isViewing={isViewing} value={formData.fechaApartado || ''} onChange={v => setFormData({...formData, fechaApartado: v})} onSave={v => validateAndSubmit({...formData, fechaApartado: v})}>
+                  {(val, change) => <input type="date" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val ? String(val).split('T')[0] : ''} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
 
-            {renderFileUpload('url_solicitud_reubicacion', 'Solicitud de Reubicación (Opcional)', false)}
-          </div>
-          
-          {!(formData.dtuAvaluo === 'SIN DTU') && !['BANCARIO', 'COFINAVIT', 'INFO + BANCO', 'FOVISSSTE TRADICIONAL'].includes(formData.metodoCompra || '') && (
-            <p className="text-xs text-slate-500 font-bold italic">No se requieren documentos obligatorios para la configuración actual.</p>
+              {/* CÁLCULOS DE DÍAS */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Días Aut. Apartado</label>
+                <InlineField type="number" isEditing={isEditing} isViewing={isViewing} value={formData.diasAutorizadosApartado || 7} onChange={v => setFormData({...formData, diasAutorizadosApartado: Number(v)})} onSave={v => validateAndSubmit({...formData, diasAutorizadosApartado: Number(v)})}>
+                  {(val, change) => <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Días de Apartado</label>
+                <div className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase py-2">{formData.fechaApartado ? diasApartado : '-'}</div>
+              </div>
+              <div className="md:col-span-2">
+                <div className={`p-3 rounded-xl border ${diasRezago > 0 ? 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800' : 'bg-slate-50 border-slate-200 dark:bg-slate-800 dark:border-slate-700'}`}>
+                  <p className={`text-[10px] font-black uppercase tracking-wider mb-0.5 flex items-center gap-1 ${diasRezago > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                    {diasRezago > 0 && <AlertCircle className="w-3.5 h-3.5"/>} Días Rezago
+                  </p>
+                  <p className={`text-[9px] font-bold mb-1.5 ${diasRezago > 0 ? 'text-red-500' : 'text-slate-400'}`}>Calculado: Días Apartado - Días Autorizados</p>
+                  <p className={`text-xl font-black ${diasRezago > 0 ? 'text-red-700 dark:text-red-300' : 'text-slate-700 dark:text-slate-300'}`}>{formData.fechaApartado ? diasRezago : '-'}</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Fecha Venta</label>
+                <InlineField type="date" isEditing={isEditing} isViewing={isViewing} value={formData.fechaVenta || ''} onChange={v => setFormData({...formData, fechaVenta: v})} onSave={v => validateAndSubmit({...formData, fechaVenta: v})}>
+                  {(val, change) => <input type="date" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val ? String(val).split('T')[0] : ''} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Fecha Escritura</label>
+                <InlineField type="date" isEditing={isEditing} isViewing={isViewing} value={formData.fechaEscritura || ''} onChange={v => setFormData({...formData, fechaEscritura: v})} onSave={v => validateAndSubmit({...formData, fechaEscritura: v})}>
+                  {(val, change) => <input type="date" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val ? String(val).split('T')[0] : ''} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+            </div>
+          </section>
+
+          {/* SECCIÓN 3: INFORMACIÓN FINANCIERA */}
+          <section>
+            <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-2">
+              3. Información Financiera
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Precio de Lista</label>
+                <InlineField type="currency" isEditing={isEditing} isViewing={isViewing} value={formData.precioLista || ''} onChange={v => setFormData({...formData, precioLista: Number(v)})} onSave={v => validateAndSubmit({...formData, precioLista: Number(v)})}>
+                  {(val, change) => <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Descuento</label>
+                <InlineField type="currency" isEditing={isEditing} isViewing={isViewing} value={formData.descuento || ''} onChange={v => setFormData({...formData, descuento: -Math.abs(Number(v))})} onSave={v => validateAndSubmit({...formData, descuento: -Math.abs(Number(v))})}>
+                  {(val, change) => <input type="number" className="w-full border border-red-200 dark:border-red-900/50 rounded-lg p-2 bg-red-50 dark:bg-red-900/10 text-sm text-red-700 dark:text-red-400 outline-none" value={Math.abs(val || 0) || ''} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">$ Obras Adicionales</label>
+                <InlineField type="currency" isEditing={isEditing} isViewing={isViewing} value={formData.precioObrasAdicionales || ''} onChange={v => setFormData({...formData, precioObrasAdicionales: Number(v)})} onSave={v => validateAndSubmit({...formData, precioObrasAdicionales: Number(v)})}>
+                  {(val, change) => <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">M2 Terr. Excedente</label>
+                <InlineField type="number" isEditing={isEditing} isViewing={isViewing} value={formData.m2TerrExc || ''} onChange={v => setFormData({...formData, m2TerrExc: Number(v)})} onSave={v => validateAndSubmit({...formData, m2TerrExc: Number(v)})}>
+                  {(val, change) => <input type="number" step="0.01" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">$ X M2 Exc</label>
+                <InlineField type="currency" isEditing={isEditing} isViewing={isViewing} value={formData.precioXM2Exc || ''} onChange={v => setFormData({...formData, precioXM2Exc: Number(v)})} onSave={v => validateAndSubmit({...formData, precioXM2Exc: Number(v)})}>
+                  {(val, change) => <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">$ Terreno Excedente</label>
+                <div className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase py-2">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(formData.precioTerrExc || 0)}</div>
+              </div>
+
+              {/* BANNER PRECIO FINAL */}
+              <div className="col-span-2 md:col-span-3 bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800 flex justify-between items-center my-2">
+                <div>
+                  <p className="text-sm font-black text-indigo-900 dark:text-indigo-300 flex items-center gap-2"><FileText className="w-4 h-4"/> Precio Final (Calculado)</p>
+                  <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold mt-1 uppercase tracking-widest">Lista - Descuento + Obras + Terr. Exc</p>
+                </div>
+                <span className="text-2xl font-black text-indigo-900 dark:text-indigo-100">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(formData.precioFinal || 0)}</span>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">DTU (Físico)</label>
+                <InlineField type="boolean" isEditing={isEditing} isViewing={isViewing} value={formData.dtu || false} onChange={v => setFormData({...formData, dtu: v})} onSave={v => validateAndSubmit({...formData, dtu: v})}>
+                  {(val, change) => <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-indigo-600 outline-none" checked={val} onChange={e => change(e.target.checked)} />}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Valor Avalúo</label>
+                <InlineField type="currency" isEditing={isEditing} isViewing={isViewing} value={formData.valorAvaluo || ''} onChange={v => setFormData({...formData, valorAvaluo: Number(v)})} onSave={v => validateAndSubmit({...formData, valorAvaluo: Number(v)})}>
+                  {(val, change) => <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">DTU Avalúo</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.dtuAvaluo || 'SIN DTU'} onChange={v => setFormData({...formData, dtuAvaluo: v})} onSave={v => validateAndSubmit({...formData, dtuAvaluo: v})}>
+                  {(val, change) => <select className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)}>{catalogs.dtuAvaluo?.map(d => <option key={d} value={d}>{d}</option>)}</select>}
+                </InlineField>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Precio Operación</label>
+                <InlineField type="currency" isEditing={isEditing} isViewing={isViewing} value={formData.precioOperacion || ''} onChange={v => setFormData({...formData, precioOperacion: Number(v)})} onSave={v => validateAndSubmit({...formData, precioOperacion: Number(v)})}>
+                  {(val, change) => <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">EK</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.ek || ''} onChange={v => setFormData({...formData, ek: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, ek: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+            </div>
+          </section>
+
+          {/* SECCIÓN 4: UBICACIÓN */}
+          <section>
+            <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-2">
+              4. Ubicación
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              <div className="md:col-span-2">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Calle</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.calle || ''} onChange={v => setFormData({...formData, calle: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, calle: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Núm Ext</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.numeroExterior || ''} onChange={v => setFormData({...formData, numeroExterior: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, numeroExterior: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Manzana</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.manzana || ''} onChange={v => setFormData({...formData, manzana: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, manzana: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Lote</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.lote || ''} onChange={v => setFormData({...formData, lote: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, lote: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Condómino</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.condomino || ''} onChange={v => setFormData({...formData, condomino: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, condomino: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Edificio</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.edificio || ''} onChange={v => setFormData({...formData, edificio: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, edificio: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Núm Int</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.numeroInterior || ''} onChange={v => setFormData({...formData, numeroInterior: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, numeroInterior: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+            </div>
+          </section>
+
+          {/* SECCIÓN 5: PROCESO DE VENTA */}
+          <section>
+            <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-2">
+              5. Proceso de Venta
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              <div className="md:col-span-2">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nombre Comprador</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.nombreComprador || ''} onChange={v => setFormData({...formData, nombreComprador: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, nombreComprador: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Asesor de Venta</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.asesor || ''} onChange={v => setFormData({...formData, asesor: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, asesor: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Método Compra</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.metodoCompra || ''} onChange={v => setFormData({...formData, metodoCompra: v})} onSave={v => validateAndSubmit({...formData, metodoCompra: v})}>
+                  {(val, change) => <select className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)}><option value="">-</option>{catalogs.metodoCompra?.map(m => <option key={m} value={m}>{m}</option>)}</select>}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Método Agrupador</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.metodoCompraAgrupador || ''} onChange={v => setFormData({...formData, metodoCompraAgrupador: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, metodoCompraAgrupador: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Es Asesor Externo</label>
+                <InlineField type="boolean" isEditing={isEditing} isViewing={isViewing} value={formData.asesorExterno || false} onChange={v => setFormData({...formData, asesorExterno: v})} onSave={v => validateAndSubmit({...formData, asesorExterno: v})}>
+                  {(val, change) => <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-indigo-600" checked={val} onChange={e => change(e.target.checked)} />}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Banco</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.banco || ''} onChange={v => setFormData({...formData, banco: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, banco: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nombre Broker</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.nombreBrokerBanco || ''} onChange={v => setFormData({...formData, nombreBrokerBanco: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, nombreBrokerBanco: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Teléfono Broker</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.telefonoBrokerBanco || ''} onChange={v => setFormData({...formData, telefonoBrokerBanco: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, telefonoBrokerBanco: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Correo Broker</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.correoBrokerBanco || ''} onChange={v => setFormData({...formData, correoBrokerBanco: String(v).toLowerCase()})} onSave={v => validateAndSubmit({...formData, correoBrokerBanco: String(v).toLowerCase()})}>
+                  {(val, change) => <input type="email" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tipo Usuario</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.tipoUsuario || ''} onChange={v => setFormData({...formData, tipoUsuario: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, tipoUsuario: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Observaciones</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.observaciones || ''} onChange={v => setFormData({...formData, observaciones: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, observaciones: String(v).toUpperCase()})}>
+                  {(val, change) => <textarea className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" rows={1} value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Retro Asesor</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.retroAsesor || ''} onChange={v => setFormData({...formData, retroAsesor: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, retroAsesor: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Titulación</label>
+                <InlineField isEditing={isEditing} isViewing={isViewing} value={formData.titulacion || ''} onChange={v => setFormData({...formData, titulacion: String(v).toUpperCase()})} onSave={v => validateAndSubmit({...formData, titulacion: String(v).toUpperCase()})}>
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Fecha Desde</label>
+                <InlineField type="date" isEditing={isEditing} isViewing={isViewing} value={formData.fechaDesde || ''} onChange={v => setFormData({...formData, fechaDesde: v})} onSave={v => validateAndSubmit({...formData, fechaDesde: v})}>
+                  {(val, change) => <input type="date" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val ? String(val).split('T')[0] : ''} onChange={e => change(e.target.value)} />}
+                </InlineField>
+              </div>
+              <div className="md:col-span-3">
+                <div className={`p-3 rounded-xl border w-max min-w-[200px] ${diasDesdeRevisar > 0 ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800' : 'bg-slate-50 border-slate-200 dark:bg-slate-800 dark:border-slate-700'}`}>
+                  <p className="text-[10px] font-black uppercase tracking-wider mb-0.5 flex items-center gap-1 text-indigo-700 dark:text-indigo-400">
+                     <Clock className="w-3.5 h-3.5"/> Días Desde Revisar
+                  </p>
+                  <p className="text-[9px] font-bold mb-1.5 text-indigo-500">Calculado: (Hoy - Fecha Desde) + 1</p>
+                  <p className="text-xl font-black text-indigo-800 dark:text-indigo-300">{formData.fechaDesde ? diasDesdeRevisar : '-'}</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Expediente digital (Oculto en Nuevo Registro, Visible en Edición y Lectura) */}
+          {(isEditing || isViewing) && (
+            <section className="bg-indigo-50/30 dark:bg-slate-800/50 p-6 rounded-2xl border border-indigo-100 dark:border-slate-700">
+              <h3 className="text-sm font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-widest flex items-center gap-2 mb-6 border-b border-indigo-200 dark:border-slate-600 pb-3">
+                <FolderOpen className="w-5 h-5 text-indigo-500" /> Expediente Digital (Nube)
+              </h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {formData.dtuAvaluo === 'SIN DTU' && renderFileUpload('url_comprobante_apartado', 'Comprobante de Apartado', true)}
+                {['BANCARIO', 'COFINAVIT', 'INFO + BANCO'].includes(formData.metodoCompra || '') && renderFileUpload('url_autorizacion_bancaria', 'Autorización Bancaria', true)}
+                {formData.metodoCompra === 'FOVISSSTE TRADICIONAL' && renderFileUpload('url_mail_fovissste', 'Mail FOVISSSTE', true)}
+                {renderFileUpload('url_solicitud_reubicacion', 'Solicitud de Reubicación (Opcional)', false)}
+              </div>
+            </section>
           )}
-        </section>
 
-      </div>
-    </form>
+        </div>
+      </form>
+
+      {/* BOTÓN FLOTANTE REGRESAR */}
+      <button 
+        type="button" 
+        onClick={onCancel} 
+        className="fixed bottom-8 right-8 z-[60] bg-slate-800 hover:bg-slate-900 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 rounded-full p-4 shadow-2xl transition-transform active:scale-95 flex items-center justify-center border border-slate-600 dark:border-slate-300"
+        title="Regresar al Inventario"
+      >
+        <ArrowLeft className="w-6 h-6" />
+      </button>
+    </>
   );
 };

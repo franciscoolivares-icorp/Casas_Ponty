@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import bcrypt from 'bcryptjs';
+import emailjs from '@emailjs/browser'; // <-- NUEVA IMPORTACIÓN DE EMAILJS
 import { 
-  UserPlus, Mail, Phone, Lock, Check, X, 
+  UserPlus, Mail, Phone, Check, X, 
   Trash2, UserCheck, UserX, Loader2, Shield, Building2 
 } from 'lucide-react';
 
@@ -72,6 +73,29 @@ export function Usuarios() {
     });
   };
 
+  // --- NUEVA LÓGICA CON EMAILJS ---
+  const sendWelcomeEmail = async (email: string, name: string, role: string, pass: string) => {
+    try {
+      const templateParams = {
+        to_email: email,
+        to_name: name,
+        rol: role,
+        password: pass,
+      };
+
+      await emailjs.send(
+        'service_q6nzdzh',     // Service ID
+        'template_3gs81yt',    // Template ID
+        templateParams,
+        'Wk9H8F1qHcLw1V9H3'    // Public Key
+      );
+      
+      console.log('Correo de bienvenida enviado exitosamente vía EmailJS');
+    } catch (err) {
+      console.error('Error al enviar el correo con EmailJS:', err);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -85,19 +109,22 @@ export function Usuarios() {
 
         const { error } = await supabase.from('usuarios').insert([{ 
             nombre: formData.nombre.toUpperCase(), 
-            correo: formData.correo, 
+            correo: formData.correo.toLowerCase(), 
             telefono: formData.telefono,
             es_admin: isAdminFinal,
             tipo_usuario: formData.tipo_usuario,
             desarrollos_asignados: desarrollosFinales,
-            password_hash: hashedPassword, // Solo guardamos el Hash (Correcto y seguro)
+            password_hash: hashedPassword, 
             es_nuevo: true,                
             activo: true
         }]);
 
         if (error) throw error;
         
-        alert(`Usuario creado.\n\nContraseña temporal y de firma: ${passwordMaestra}\nRol: ${formData.tipo_usuario}`);
+        // Disparamos el correo automático con EmailJS
+        await sendWelcomeEmail(formData.correo.toLowerCase(), formData.nombre.toUpperCase(), formData.tipo_usuario, passwordMaestra);
+
+        alert(`Usuario creado con éxito.\nSe ha enviado un correo de bienvenida a ${formData.correo}.`);
         setIsModalOpen(false);
         setFormData({ nombre: '', correo: '', telefono: '', password: '', es_admin: false, tipo_usuario: 'ASESOR', desarrollos_asignados: [] });
         fetchData();

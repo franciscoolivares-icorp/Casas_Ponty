@@ -2,10 +2,10 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Propiedad, Estado } from '../types';
 import { 
-    Settings, GripVertical, X, Check, ArrowRight, ArrowLeft, 
-    User, CreditCard, FileText, Clock, AlertTriangle, List, 
-    Search, Unlock, AlertCircle, Save, Building2, ArrowRightLeft, Lock,
-    UploadCloud, CheckCircle2, FolderOpen, Mail, ShieldAlert
+  Settings, GripVertical, X, Check, ArrowRight, ArrowLeft, 
+  User, CreditCard, FileText, Clock, AlertTriangle, List, 
+  Search, Unlock, AlertCircle, Save, Building2, ArrowRightLeft, Lock,
+  UploadCloud, CheckCircle2, FolderOpen, Mail, ShieldAlert
 } from 'lucide-react';
 
 interface TestViewProps {
@@ -90,9 +90,8 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
       url_solicitud_reubicacion: null as string | null
   });
   
-  const [incidentProperty, setIncidentProperty] = useState<Propiedad | null>(null);
-  const [incidentRetro, setIncidentRetro] = useState('');
   const [reservationSearch, setReservationSearch] = useState('');
+  const [showOnlyIncidents, setShowOnlyIncidents] = useState(false); // <-- NUEVO ESTADO PARA EL FILTRO DE INCIDENCIAS
   
   const [propertyToRelease, setPropertyToRelease] = useState<Propiedad | null>(null);
   
@@ -110,23 +109,9 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
   const [isUploading, setIsUploading] = useState<Record<string, boolean>>({});
   const [formError, setFormError] = useState<string | null>(null);
 
-  const [solicitudesPendientes, setSolicitudesPendientes] = useState<any[]>([]);
-  const [showSolicitudesModal, setShowSolicitudesModal] = useState(false);
-
-  const fetchSolicitudes = async () => {
-    if (!isCoordinador) return;
-    try {
-        const { data, error } = await supabase
-            .from('solicitudes_reubicacion')
-            .select('*')
-            .eq('estado_solicitud', 'PENDIENTE');
-        if (!error) setSolicitudesPendientes(data || []);
-    } catch (e) { console.error(e); }
-  };
-
-  useEffect(() => {
-      fetchSolicitudes();
-  }, [isCoordinador]);
+  // --- ESTADOS PARA INCIDENCIAS ---
+  const [incidentProperty, setIncidentProperty] = useState<Propiedad | null>(null);
+  const [incidentRetro, setIncidentRetro] = useState('');
 
   const toggleModeloSelection = (modelo: string) => setSelectedModelos(prev => prev.includes(modelo) ? prev.filter(m => m !== modelo) : [...prev, modelo]);
   const toggleNivelSelection = (nivel: string) => setSelectedNiveles(prev => prev.includes(nivel) ? prev.filter(n => n !== nivel) : [...prev, nivel]);
@@ -140,7 +125,6 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
     dragItem.current = position;
     setColumns(newCols);
   };
-  const handleOpenIncident = (prop: Propiedad) => { setIncidentProperty(prop); setIncidentRetro(prop.retroAsesor || ''); };
 
   const availableProperties = useMemo(() => properties.filter(p => (p.estado || '').toUpperCase() === 'DISPONIBLE'), [properties]);
   const availableDesarrollos = useMemo(() => Array.from(new Set(availableProperties.map(p => p.desarrollo))).sort(), [availableProperties]);
@@ -177,20 +161,32 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
   }, [availableProperties, selectedDesarrollo, selectedModelos, selectedNiveles]);
 
   const reservedProperties = useMemo(() => {
-    let props = properties.filter(p => (p.estado || '').toUpperCase() === 'APARTADO' || (p.estado || '').toUpperCase() === 'VENDIDO' || (p.estado || '').toUpperCase() === 'PENDIENTE APROBACIÓN');
+    let props = properties.filter(p => {
+        const status = (p.estado || '').toUpperCase();
+        return status === 'APARTADO' || status === 'VENDIDO' || status === 'VENDIDO-P' || status === 'PREVENTA';
+    });
+    
     if (isAsesor && currentUser?.nombre) {
         props = props.filter(p => p.asesor === currentUser.nombre);
     }
     return props.sort((a, b) => (b.diasDesdeRevisar || 0) - (a.diasDesdeRevisar || 0));
   }, [properties, isAsesor, currentUser]);
 
-  const revisarCount = useMemo(() => reservedProperties.filter(p => (p.diasDesdeRevisar || 0) >= 1).length, [reservedProperties]);
+  // --- CÁLCULO DE INCIDENCIAS GLOBALES ---
+  const revisarCount = useMemo(() => reservedProperties.filter(p => (p.diasDesdeRevisar || 0) > 0).length, [reservedProperties]);
 
   const filteredReservedProperties = useMemo(() => {
-      if (!reservationSearch) return reservedProperties;
+      let props = reservedProperties;
+      
+      // Aplicar filtro de solo incidencias si se presionó el botón rojo
+      if (showOnlyIncidents) {
+        props = props.filter(p => (p.diasDesdeRevisar || 0) > 0);
+      }
+
+      if (!reservationSearch) return props;
       const lowerSearch = reservationSearch.toLowerCase();
-      return reservedProperties.filter(p => Object.values(p).some(val => val !== null && val !== undefined && String(val).toLowerCase().includes(lowerSearch)));
-  }, [reservedProperties, reservationSearch]);
+      return props.filter(p => Object.values(p).some(val => val !== null && val !== undefined && String(val).toLowerCase().includes(lowerSearch)));
+  }, [reservedProperties, reservationSearch, showOnlyIncidents]);
 
   const filteredRelocateTargets = useMemo(() => {
     if (!relocateSearchTerm) return availableProperties.slice(0, 30);
@@ -293,17 +289,6 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
       setSelectedProperty(null); 
   };
 
-  const handleMarkAsSold = async (prop: Propiedad) => {
-      if (window.confirm(`¿Confirmas que el apartado de ${prop.nombreComprador} ya es una VENTA cerrada? El estatus cambiará a VENDIDO y se activarán las reglas estrictas de reubicación.`)) {
-          try {
-              await supabase.from('propiedades').update({ estado: 'VENDIDO' }).eq('idPropiedad', prop.idPropiedad);
-              onUpdateProperty({ idPropiedad: prop.idPropiedad, estado: 'VENDIDO' });
-          } catch (e) {
-              alert('Error al marcar como vendido.');
-          }
-      }
-  };
-
   const handleReleaseConfirm = async () => {
       if (!propertyToRelease) return;
       setIsProcessing(true);
@@ -395,52 +380,25 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
     } catch (error) { alert('Error al reubicar: ' + error); } finally { setIsProcessing(false); }
   };
 
-  const handleAprobarSolicitud = async (solicitud: any) => {
-      try {
-          const propOrigen = properties.find(p => p.idPropiedad === solicitud.id_propiedad_origen);
-          if (!propOrigen) return alert('No se encontró la propiedad de origen localmente.');
-
-          const newPropData: Partial<Propiedad> = {
-              estado: Estado.VENDIDO,
-              nombreComprador: propOrigen.nombreComprador, metodoCompra: propOrigen.metodoCompra, ek: propOrigen.ek, 
-              asesorExterno: propOrigen.asesorExterno, asesor: propOrigen.asesor, fechaApartado: propOrigen.fechaApartado, 
-              banco: propOrigen.banco, url_comprobante_apartado: propOrigen.url_comprobante_apartado,
-              url_autorizacion_bancaria: propOrigen.url_autorizacion_bancaria, url_mail_fovissste: propOrigen.url_mail_fovissste
-          };
-          
-          const oldPropData: Partial<Propiedad> = {
-              estado: Estado.DISPONIBLE, fechaApartado: null, precioOperacion: 0, nombreComprador: null, 
-              banco: null, ek: null, metodoCompra: null, asesorExterno: false, asesor: null,
-              url_comprobante_apartado: null, url_autorizacion_bancaria: null, url_mail_fovissste: null
-          };
-
-          await supabase.from('propiedades').update(newPropData).eq('idPropiedad', solicitud.id_propiedad_destino);
-          await supabase.from('propiedades').update(oldPropData).eq('idPropiedad', solicitud.id_propiedad_origen);
-          await supabase.from('solicitudes_reubicacion').update({ estado_solicitud: 'APROBADA' }).eq('id', solicitud.id);
-
-          alert('Solicitud Aprobada. La reubicación se ha completado.');
-          fetchSolicitudes();
-          window.location.reload(); 
-      } catch (e) { alert('Error: ' + e); }
-  };
-
-  const handleRechazarSolicitud = async (solicitud: any) => {
-      try {
-          await supabase.from('propiedades').update({ estado: Estado.VENDIDO }).eq('idPropiedad', solicitud.id_propiedad_origen);
-          await supabase.from('propiedades').update({ estado: Estado.DISPONIBLE }).eq('idPropiedad', solicitud.id_propiedad_destino);
-          await supabase.from('solicitudes_reubicacion').update({ estado_solicitud: 'RECHAZADA' }).eq('id', solicitud.id);
-
-          alert('Solicitud Rechazada. Los lotes volvieron a su estado original.');
-          fetchSolicitudes();
-          window.location.reload();
-      } catch (e) { alert('Error: ' + e); }
-  };
-
-  const handleSaveIncident = (e: React.FormEvent) => {
-      e.preventDefault();
+  // --- FUNCIÓN PARA GUARDAR LA RETROALIMENTACIÓN DE LA INCIDENCIA ---
+  const handleSaveIncident = async () => {
       if (!incidentProperty) return;
-      onUpdateProperty({ idPropiedad: incidentProperty.idPropiedad, retroAsesor: incidentRetro.toUpperCase() });
-      setIncidentProperty(null);
+      setIsProcessing(true);
+      try {
+          // Actualiza directo en la base de datos
+          await supabase.from('propiedades').update({ retroAsesor: incidentRetro.toUpperCase() }).eq('idPropiedad', incidentProperty.idPropiedad);
+          
+          // Actualiza el estado visual
+          onUpdateProperty({ idPropiedad: incidentProperty.idPropiedad, retroAsesor: incidentRetro.toUpperCase() });
+          
+          alert('Retroalimentación guardada con éxito.');
+          setIncidentProperty(null);
+          setIncidentRetro('');
+      } catch (err: any) {
+          alert('Error al guardar: ' + err.message);
+      } finally {
+          setIsProcessing(false);
+      }
   };
 
   const visibleColumns = columns.filter(c => c.visible);
@@ -536,26 +494,22 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                           <input type="text" placeholder="Buscar por cliente, ID..." className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-colors text-sm font-medium" value={reservationSearch} onChange={(e) => setReservationSearch(e.target.value)} />
                       </div>
                     </div>
-                    {/* BOTÓN COORDINADOR - BANDEJA APROBACIONES */}
-                    {isCoordinador && (
-                        <div className="flex-shrink-0 flex items-end">
-                            <button onClick={() => setShowSolicitudesModal(true)} className="relative flex items-center px-4 py-2.5 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 rounded-lg text-sm font-bold transition-all shadow-sm">
-                                <ShieldAlert className="w-4 h-4 mr-2" /> Aprobaciones
-                                {solicitudesPendientes.length > 0 && (
-                                    <span className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-white">{solicitudesPendientes.length}</span>
-                                )}
-                            </button>
-                        </div>
-                    )}
                 </div>
               )}
 
               <div className="flex flex-wrap items-center gap-3 lg:mt-6">
-                 {revisarCount >= 1 && viewMode === 'reservations' && !isAuditor && (
-                     <div className="flex items-center px-3 py-2 bg-red-100 dark:bg-red-900/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg shadow-sm animate-pulse">
-                         <AlertTriangle className="w-4 h-4 mr-2" />
-                         <span className="text-xs font-black uppercase tracking-widest">ATENDER {revisarCount}</span>
-                     </div>
+                 
+                 {/* BOTÓN DE ALERTA DE INCIDENCIAS */}
+                 {revisarCount > 0 && (
+                   <button
+                     onClick={() => {
+                       setViewMode('reservations');
+                       setShowOnlyIncidents(!showOnlyIncidents);
+                     }}
+                     className={`flex items-center px-4 py-2.5 rounded-lg text-sm font-black uppercase tracking-wider transition-all shadow-sm ${showOnlyIncidents ? 'bg-red-700 text-white' : 'bg-red-600 text-white hover:bg-red-700'}`}
+                   >
+                     <AlertTriangle className="w-4 h-4 mr-2" /> REVISAR {revisarCount}
+                   </button>
                  )}
 
                  {viewMode === 'catalog' && (
@@ -584,8 +538,8 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                   </div>
                  )}
 
-                 <button onClick={() => setViewMode(viewMode === 'catalog' ? 'reservations' : 'catalog')} className={`flex items-center px-5 py-2.5 rounded-lg shadow-sm text-sm font-bold transition-all active:scale-95 ${viewMode === 'reservations' ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 dark:shadow-none' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
-                     {viewMode === 'catalog' ? <><List className="h-4 w-4 mr-2" /> {isAsesor ? 'Mis Clientes' : 'Ver Apartados'}</> : <><ArrowLeft className="h-4 w-4 mr-2" /> Volver al Catálogo</>}
+                 <button onClick={() => { setViewMode(viewMode === 'catalog' ? 'reservations' : 'catalog'); setShowOnlyIncidents(false); }} className={`flex items-center px-5 py-2.5 rounded-lg shadow-sm text-sm font-black uppercase tracking-wider transition-all active:scale-95 ${viewMode === 'reservations' ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 dark:shadow-none' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
+                     {viewMode === 'catalog' ? <><List className="h-4 w-4 mr-2" /> {isAsesor ? 'Mis Clientes' : 'Reservas'}</> : <><ArrowLeft className="h-4 w-4 mr-2" /> Catálogo</>}
                  </button>
               </div>
           </div>
@@ -596,7 +550,7 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
         <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2">
             <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${viewMode === 'catalog' ? 'bg-green-100 text-green-800 border border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' : 'bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800'}`}>
-                {viewMode === 'catalog' ? 'Catálogo Disponible' : (isAsesor ? 'Mis Clientes' : 'Inventario Apartado')}
+                {viewMode === 'catalog' ? 'Catálogo Disponible' : (showOnlyIncidents ? 'Incidencias Pendientes' : (isAsesor ? 'Mis Clientes' : 'Inventario Apartado'))}
             </span>
           </div>
           <span className="text-xs font-bold text-slate-500 dark:text-slate-400 bg-slate-200/50 dark:bg-slate-800 px-2.5 py-1 rounded-md uppercase tracking-wider">
@@ -621,8 +575,11 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                             <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">Asesor</th>
                             <th className="px-4 py-3 text-center text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">Archivos</th>
                             <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">$ Final</th>
-                            <th className="px-4 py-3 text-center text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">Status</th>
-                            {!isAuditor && <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider sticky right-0 bg-slate-100 dark:bg-slate-900 shadow-[-4px_0_6px_-1px_rgb(0,0,0,0.05)] z-40 align-middle">Acciones</th>}
+                            
+                            {/* REEMPLAZO DE STATUS POR INCIDENCIAS SEGÚN CAPTURA */}
+                            <th className="px-4 py-3 text-center text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">Incidencias</th>
+                            
+                            {!isAuditor && <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider sticky right-0 bg-slate-100 dark:bg-slate-900 shadow-[-4px_0_6px_-1px_rgb(0,0,0,0.05)] z-40 align-middle">Acción</th>}
                         </tr>
                     )}
                 </thead>
@@ -650,60 +607,129 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                             </tr>
                         )) : <tr><td colSpan={visibleColumns.length + (isAuditor ? 1 : 2)} className="px-4 py-16 text-center text-slate-500 dark:text-slate-400"><Search className="w-8 h-8 mx-auto mb-3 opacity-20" /><p className="text-sm font-medium">{selectedDesarrollo ? "No hay inventario disponible con estos filtros." : "Seleccione un Desarrollo para ver el inventario disponible."}</p></td></tr>
                     ) : (
-                        filteredReservedProperties.length > 0 ? filteredReservedProperties.map((prop) => (
-                            <tr key={prop.idPropiedad} className={`transition-colors group ${prop.estado === 'PENDIENTE APROBACIÓN' ? 'bg-purple-50/50 dark:bg-purple-900/20 border-l-4 border-purple-500' : 'hover:bg-amber-50/30 dark:hover:bg-slate-700/50'}`}>
-                                <td className="px-4 py-3 whitespace-nowrap text-sm font-bold text-slate-900 dark:text-white truncate max-w-[150px]">{prop.nombreComprador || '-'}</td>
-                                <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600 dark:text-slate-400">{prop.desarrollo} <br/> <span className="font-bold">{prop.modelo}</span></td>
-                                <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600 dark:text-slate-400">{prop.nivel} <span className="text-slate-400">|</span> {prop.condomino || '-'} <span className="text-slate-400">|</span> Int: {prop.numeroInterior || '-'}</td>
-                                <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600 dark:text-slate-400">
-                                  <span className="font-bold text-slate-800 dark:text-slate-200">{prop.asesor || 'Sin asignar'}</span>
-                                  {prop.asesor === currentUser?.nombre && (
-                                    <span className="ml-2 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-400 text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest">Tú</span>
+                        filteredReservedProperties.length > 0 ? filteredReservedProperties.map((prop) => {
+                            const status = (prop.estado || '').toUpperCase();
+                            const isReubicar = status === 'VENDIDO' || status === 'VENDIDO-P' || status === 'PREVENTA';
+                            
+                            return (
+                              <tr key={prop.idPropiedad} className="transition-colors group hover:bg-amber-50/30 dark:hover:bg-slate-700/50">
+                                  <td className="px-4 py-3 whitespace-nowrap text-sm font-bold text-slate-900 dark:text-white truncate max-w-[150px]">{prop.nombreComprador || '-'}</td>
+                                  <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600 dark:text-slate-400">{prop.desarrollo} <br/> <span className="font-bold">{prop.modelo}</span></td>
+                                  <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600 dark:text-slate-400">{prop.nivel} <span className="text-slate-400">|</span> {prop.condomino || '-'} <span className="text-slate-400">|</span> Int: {prop.numeroInterior || '-'}</td>
+                                  <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600 dark:text-slate-400">
+                                    <span className="font-bold text-slate-800 dark:text-slate-200">{prop.asesor || 'Sin asignar'}</span>
+                                    {prop.asesor === currentUser?.nombre && (
+                                      <span className="ml-2 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-400 text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest">Tú</span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 whitespace-nowrap text-center flex items-center justify-center gap-2 mt-1">
+                                    {prop.url_comprobante_apartado && <a href={prop.url_comprobante_apartado} target="_blank" rel="noreferrer" className="text-emerald-500 hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors" title="Ver Comprobante Apartado"><FileText className="w-4 h-4"/></a>}
+                                    {prop.url_autorizacion_bancaria && <a href={prop.url_autorizacion_bancaria} target="_blank" rel="noreferrer" className="text-blue-500 hover:text-blue-700 dark:hover:text-blue-400 transition-colors" title="Ver Autorización Bancaria"><CreditCard className="w-4 h-4"/></a>}
+                                    {prop.url_mail_fovissste && <a href={prop.url_mail_fovissste} target="_blank" rel="noreferrer" className="text-purple-500 hover:text-purple-700 dark:hover:text-purple-400 transition-colors" title="Ver Mail FOVISSSTE"><Mail className="w-4 h-4"/></a>}
+                                    {!prop.url_comprobante_apartado && !prop.url_autorizacion_bancaria && !prop.url_mail_fovissste && !prop.url_solicitud_reubicacion && <span className="text-slate-300 dark:text-slate-600">-</span>}
+                                  </td>
+                                  <td className="px-4 py-3 whitespace-nowrap text-sm text-right font-black text-slate-800 dark:text-slate-200">{formatCurrency(prop.precioFinal)}</td>
+                                  
+                                  {/* COLUMNA DE INCIDENCIAS (Sustituye a Status) */}
+                                  <td className="px-4 py-3 whitespace-nowrap text-center">
+                                      {(prop.diasDesdeRevisar || 0) > 0 ? (
+                                          <button 
+                                            onClick={() => { setIncidentProperty(prop); setIncidentRetro(prop.retroAsesor || ''); }} 
+                                            className="px-3 py-1 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded-md text-[10px] font-black uppercase tracking-widest hover:bg-orange-200 transition-colors shadow-sm"
+                                          >
+                                              ATIENDE {prop.diasDesdeRevisar}
+                                          </button>
+                                      ) : <span className="text-slate-300 dark:text-slate-600 font-bold">-</span>}
+                                  </td>
+
+                                  {!isAuditor && (
+                                      <td className="px-4 py-2 whitespace-nowrap text-right sticky right-0 bg-white dark:bg-slate-800 transition-colors shadow-[-4px_0_6px_-1px_rgb(0,0,0,0.02)] align-middle z-10 group-hover:bg-amber-50 dark:group-hover:bg-slate-700/80">
+                                          {isReubicar ? (
+                                              <button onClick={() => setRelocateProperty(prop)} className="inline-flex items-center px-4 py-1.5 border border-indigo-200 dark:border-indigo-800 text-xs font-bold rounded-lg text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-600 hover:text-white dark:hover:text-white transition-all uppercase tracking-wider shadow-sm">
+                                                  <ArrowRightLeft className="w-3.5 h-3.5 mr-1.5" /> Reubicar
+                                              </button>
+                                          ) : (
+                                              <button onClick={() => {setPropertyToRelease(prop); setPasswordError(''); setReleasePassword('');}} className="inline-flex items-center px-4 py-1.5 border border-slate-200 dark:border-slate-600 text-xs font-bold rounded-lg text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:border-red-500 hover:text-red-600 dark:hover:text-red-400 transition-all uppercase tracking-wider shadow-sm">
+                                                  <Unlock className="w-3.5 h-3.5 mr-1.5" /> Liberar
+                                              </button>
+                                          )}
+                                      </td>
                                   )}
-                                </td>
-                                <td className="px-4 py-3 whitespace-nowrap text-center flex items-center justify-center gap-2 mt-1">
-                                  {prop.url_comprobante_apartado && <a href={prop.url_comprobante_apartado} target="_blank" rel="noreferrer" className="text-emerald-500 hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors" title="Ver Comprobante Apartado"><FileText className="w-4 h-4"/></a>}
-                                  {prop.url_autorizacion_bancaria && <a href={prop.url_autorizacion_bancaria} target="_blank" rel="noreferrer" className="text-blue-500 hover:text-blue-700 dark:hover:text-blue-400 transition-colors" title="Ver Autorización Bancaria"><CreditCard className="w-4 h-4"/></a>}
-                                  {prop.url_mail_fovissste && <a href={prop.url_mail_fovissste} target="_blank" rel="noreferrer" className="text-purple-500 hover:text-purple-700 dark:hover:text-purple-400 transition-colors" title="Ver Mail FOVISSSTE"><Mail className="w-4 h-4"/></a>}
-                                  {!prop.url_comprobante_apartado && !prop.url_autorizacion_bancaria && !prop.url_mail_fovissste && !prop.url_solicitud_reubicacion && <span className="text-slate-300 dark:text-slate-600">-</span>}
-                                </td>
-                                <td className="px-4 py-3 whitespace-nowrap text-sm text-right font-black text-slate-800 dark:text-slate-200">{formatCurrency(prop.precioFinal)}</td>
-                                <td className="px-4 py-3 whitespace-nowrap text-center">
-                                    {prop.estado === 'PENDIENTE APROBACIÓN' ? (
-                                        <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-md text-[10px] font-black uppercase tracking-widest">En Aprobación</span>
-                                    ) : prop.estado === 'VENDIDO' ? (
-                                        <span className="px-2 py-1 bg-red-100 text-red-700 rounded-md text-[10px] font-black uppercase tracking-widest">Vendido</span>
-                                    ) : (prop.diasDesdeRevisar || 0) >= 1 ? (
-                                        <button onClick={() => handleOpenIncident(prop)} className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-md text-xs font-bold uppercase tracking-wider hover:bg-red-600 hover:text-white transition-all shadow-sm">Revisar ({prop.diasDesdeRevisar})</button>
-                                    ) : <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">Al día</span>}
-                                </td>
-                                {!isAuditor && (
-                                    <td className={`px-4 py-2 whitespace-nowrap text-right sticky right-0 bg-white dark:bg-slate-800 transition-colors shadow-[-4px_0_6px_-1px_rgb(0,0,0,0.02)] align-middle z-10 ${prop.estado === 'PENDIENTE APROBACIÓN' ? 'group-hover:bg-purple-50/50 dark:group-hover:bg-purple-900/20' : 'group-hover:bg-amber-50 dark:group-hover:bg-slate-700/80'}`}>
-                                        <div className="flex items-center justify-end gap-2">
-                                            {prop.estado === 'APARTADO' && (
-                                                <button 
-                                                    onClick={() => handleMarkAsSold(prop)} 
-                                                    className="inline-flex items-center px-3 py-1.5 border border-emerald-200 dark:border-emerald-800 text-xs font-bold rounded-lg text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-600 hover:text-white dark:hover:text-white transition-all uppercase tracking-wider shadow-sm"
-                                                >
-                                                    <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" /> Vender
-                                                </button>
-                                            )}
-                                            <button disabled={prop.estado === 'PENDIENTE APROBACIÓN'} onClick={() => setRelocateProperty(prop)} className="inline-flex items-center px-3 py-1.5 border border-indigo-200 dark:border-indigo-800 text-xs font-bold rounded-lg text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-600 hover:text-white dark:hover:text-white transition-all uppercase tracking-wider shadow-sm disabled:opacity-50">
-                                                <ArrowRightLeft className="w-3.5 h-3.5 mr-1.5" /> Reubicar
-                                            </button>
-                                            <button disabled={prop.estado === 'PENDIENTE APROBACIÓN'} onClick={() => {setPropertyToRelease(prop); setPasswordError(''); setReleasePassword('');}} className="inline-flex items-center px-3 py-1.5 border border-slate-200 dark:border-slate-600 text-xs font-bold rounded-lg text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:border-red-500 hover:text-red-600 dark:hover:text-red-400 transition-all uppercase tracking-wider shadow-sm disabled:opacity-50">
-                                                <Unlock className="w-3.5 h-3.5 mr-1.5" /> Liberar
-                                            </button>
-                                        </div>
-                                    </td>
-                                )}
-                            </tr>
-                        )) : <tr><td colSpan={isAuditor ? 8 : 9} className="px-4 py-16 text-center text-slate-500 dark:text-slate-400"><Building2 className="w-8 h-8 mx-auto mb-3 opacity-20" /><p className="text-sm font-medium">{isAsesor ? "No tienes clientes apartados en este momento." : "No hay propiedades apartadas."}</p></td></tr>
+                              </tr>
+                            );
+                        }) : <tr><td colSpan={isAuditor ? 7 : 8} className="px-4 py-16 text-center text-slate-500 dark:text-slate-400"><Building2 className="w-8 h-8 mx-auto mb-3 opacity-20" /><p className="text-sm font-medium">{isAsesor ? "No tienes clientes apartados en este momento." : "No hay propiedades apartadas."}</p></td></tr>
                     )}
                 </tbody>
             </table>
         </div>
       </div>
+
+      {/* --- MODAL DE ATENCIÓN DE INCIDENCIA --- */}
+      {incidentProperty && !isAuditor && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col transform transition-all scale-100">
+               
+               {/* Cabecera Naranja */}
+               <div className="bg-orange-600 px-6 py-4 flex justify-between items-center shrink-0">
+                  <h3 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5"/> Atención de Incidencia
+                  </h3>
+                  <button onClick={() => setIncidentProperty(null)} className="text-white/70 hover:text-white transition-colors"><X className="w-5 h-5"/></button>
+               </div>
+               
+               <div className="p-6 space-y-5 overflow-y-auto custom-scrollbar">
+                  
+                  {/* Cuadros de información estática */}
+                  <div className="grid grid-cols-2 gap-4">
+                     <div className="space-y-1.5">
+                       <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1">Nombre Comprador</label>
+                       <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700 text-sm font-bold text-slate-700 dark:text-slate-300 truncate">
+                          {incidentProperty.nombreComprador}
+                       </div>
+                     </div>
+                     <div className="space-y-1.5">
+                       <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1">Desarrollo</label>
+                       <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700 text-sm font-bold text-slate-700 dark:text-slate-300 truncate">
+                          {incidentProperty.desarrollo}
+                       </div>
+                     </div>
+                     <div className="space-y-1.5">
+                       <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1">Titulación</label>
+                       <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700 text-sm font-bold text-slate-700 dark:text-slate-300">
+                          {incidentProperty.titulacion || 'N/A'}
+                       </div>
+                     </div>
+                     <div className="space-y-1.5">
+                       <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1">Días Revisar</label>
+                       <div className="bg-indigo-50 dark:bg-indigo-900/20 p-3 rounded-xl border border-indigo-100 dark:border-indigo-800/50 text-sm font-black text-indigo-700 dark:text-indigo-400">
+                          {incidentProperty.diasDesdeRevisar}
+                       </div>
+                     </div>
+                  </div>
+
+                  {/* Textarea Editable */}
+                  <div className="space-y-1.5 pt-2">
+                     <label className="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest ml-1">Retro Asesor (Editable)</label>
+                     <textarea 
+                        value={incidentRetro} 
+                        onChange={e => setIncidentRetro(e.target.value.toUpperCase())} 
+                        className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-4 text-sm font-medium focus:ring-2 focus:ring-orange-500 outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white uppercase transition-all shadow-inner" 
+                        rows={4} 
+                        placeholder="INGRESE RETROALIMENTACIÓN..."
+                     />
+                  </div>
+
+               </div>
+               
+               <div className="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 flex justify-end gap-3 border-t border-slate-200 dark:border-slate-700 shrink-0">
+                  <button disabled={isProcessing} onClick={() => setIncidentProperty(null)} className="px-5 py-2.5 font-black text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors">Cancelar</button>
+                  <button disabled={isProcessing} onClick={handleSaveIncident} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest flex items-center shadow-lg shadow-indigo-200 dark:shadow-none transition-transform active:scale-95 disabled:opacity-50">
+                     {isProcessing ? 'Guardando...' : <><Save className="w-4 h-4 mr-2"/> Guardar</>}
+                  </button>
+               </div>
+            </div>
+          </div>
+      )}
 
       {/* --- MODAL DE APARTADO CON SUBIDA DE ARCHIVOS --- */}
       {selectedProperty && viewMode === 'catalog' && !isAuditor && (
@@ -902,81 +928,6 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                 </div>
             </div>
           </div>
-      )}
-
-      {/* --- MODAL BANDEJA DE APROBACIONES (COORDINADOR) --- */}
-      {showSolicitudesModal && isCoordinador && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
-            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95 border border-slate-200 dark:border-slate-700 flex flex-col max-h-[90vh]">
-                <div className="bg-red-50 dark:bg-red-900/20 px-6 py-4 flex justify-between items-center border-b border-red-100 dark:border-red-900/50">
-                    <div className="flex items-center gap-3"><ShieldAlert className="w-5 h-5 text-red-600 dark:text-red-400" /><h3 className="text-sm font-black text-red-800 dark:text-red-300 uppercase tracking-widest">Aprobaciones de Reubicación Pendientes</h3></div>
-                    <button onClick={() => setShowSolicitudesModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
-                </div>
-                
-                <div className="p-6 overflow-y-auto flex-1 bg-slate-50 dark:bg-slate-900">
-                    {solicitudesPendientes.length === 0 ? (
-                        <div className="text-center py-12 text-slate-500"><CheckCircle2 className="w-12 h-12 mx-auto mb-3 text-emerald-400 opacity-50"/><p className="text-lg font-bold">Todo al día</p><p className="text-sm">No hay solicitudes pendientes de revisión.</p></div>
-                    ) : (
-                        <div className="space-y-4">
-                            {solicitudesPendientes.map(sol => (
-                                <div key={sol.id} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-5 flex flex-col md:flex-row gap-5 items-center">
-                                    <div className="flex-1 space-y-3 w-full">
-                                        <div className="flex justify-between items-start">
-                                            <div>
-                                                <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Cliente / Asesor</p>
-                                                <p className="text-base font-bold text-slate-900 dark:text-white">{sol.nombre_comprador}</p>
-                                                <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mt-0.5"><User className="inline w-3 h-3 mr-1"/> {sol.asesor}</p>
-                                            </div>
-                                            <a href={sol.url_documento} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-700 rounded-lg text-xs font-bold hover:bg-purple-100 transition-colors border border-purple-200"><FileText className="w-3.5 h-3.5"/> Ver PDF</a>
-                                        </div>
-                                        <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
-                                            <div className="flex-1">
-                                                <p className="text-[9px] font-black text-red-500 uppercase tracking-wider mb-1">Sale de (Origen)</p>
-                                                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{sol.id_propiedad_origen}</p>
-                                            </div>
-                                            <ArrowRight className="w-5 h-5 text-slate-300" />
-                                            <div className="flex-1">
-                                                <p className="text-[9px] font-black text-emerald-500 uppercase tracking-wider mb-1">Entra a (Destino)</p>
-                                                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{sol.id_propiedad_destino}</p>
-                                            </div>
-                                        </div>
-                                        {sol.notas && <p className="text-xs text-slate-500 italic">" {sol.notas} "</p>}
-                                    </div>
-                                    <div className="flex md:flex-col gap-2 w-full md:w-32 shrink-0">
-                                        <button onClick={() => handleAprobarSolicitud(sol)} className="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-emerald-700 shadow-sm transition-transform active:scale-95"><Check className="inline w-4 h-4 mr-1"/> Aprobar</button>
-                                        <button onClick={() => handleRechazarSolicitud(sol)} className="flex-1 px-4 py-2.5 bg-white border border-red-200 text-red-600 rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-red-50 shadow-sm transition-colors"><X className="inline w-4 h-4 mr-1"/> Rechazar</button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-      )}
-
-      {/* --- MODAL DE INCIDENTES (REVISAR) --- */}
-      {incidentProperty && !isAuditor && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
-            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 border border-slate-200 dark:border-slate-700">
-                <div className="bg-red-600 px-6 py-4 flex justify-between items-center">
-                    <div className="flex items-center gap-3"><AlertTriangle className="w-5 h-5 text-white" /><h3 className="text-sm font-black text-white uppercase tracking-widest">Revisar Incidencia</h3></div>
-                    <button onClick={() => setIncidentProperty(null)} className="text-white/70 hover:text-white"><X className="w-5 h-5" /></button>
-                </div>
-                <div className="p-6">
-                    <form onSubmit={handleSaveIncident} className="space-y-4">
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Retroalimentación / Acción</label>
-                            <textarea className="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white rounded-xl p-3 text-sm focus:ring-2 focus:ring-red-500 outline-none font-medium uppercase" rows={4} value={incidentRetro} onChange={(e) => setIncidentRetro(e.target.value.toUpperCase())} placeholder="Escriba la acción tomada o retroalimentación..." />
-                        </div>
-                        <div className="flex justify-end gap-3 pt-4">
-                            <button type="button" onClick={() => setIncidentProperty(null)} className="px-5 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors uppercase tracking-wider">Cancelar</button>
-                            <button type="submit" className="px-6 py-2.5 bg-red-600 text-white text-xs font-bold uppercase tracking-wider rounded-xl shadow-lg shadow-red-200 dark:shadow-none hover:bg-red-700 transition-transform active:scale-95">Guardar Cambios</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
       )}
 
     </div>
