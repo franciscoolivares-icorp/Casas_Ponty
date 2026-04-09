@@ -182,12 +182,72 @@ export const PropertyList: React.FC<PropertyListProps> = ({
         const bstr = evt.target?.result;
         const workbook = XLSX.read(bstr, { type: 'binary' });
         const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+        
+        // --- NUEVO: FUNCIÓN PARA LIMPIAR Y PARSEAR FECHAS DE EXCEL ---
+        const parseExcelDate = (val: any) => {
+          if (val === null || val === undefined) return null;
+          // Limpiamos espacios y la comilla simple de Excel si existe
+          const strVal = String(val).trim().replace(/^'/, '').trim(); 
+          if (strVal === '') return null; // Si quedó vacío, devolvemos null real
+
+          // Si Excel lo mandó como número de serie (ej. 45382)
+          if (!isNaN(Number(strVal))) {
+            const date = new Date(Math.round((Number(strVal) - 25569) * 86400 * 1000));
+            return date.toISOString();
+          }
+
+          // Si es un texto de fecha normal (ej. 2026-03-31)
+          const date = new Date(strVal);
+          return isNaN(date.getTime()) ? null : date.toISOString();
+        };
+
         const formattedData = jsonData.map((row: any) => ({
-          ...row,
           idPropiedad: row.idPropiedad || `pnty-${Math.floor(100000 + Math.random() * 900000)}`,
+          desarrollo: row.desarrollo || null,
+          nivel: row.nivel || null,
+          modelo: row.modelo || null,
+          modeloAgrupador: row.modeloAgrupador || null,
+          estado: row.estado || 'DISPONIBLE',
+          estadoAgrupador: row.estadoAgrupador || null,
+          precioLista: Number(row.precioLista) || 0,
+          descuento: Number(row.descuento) || 0,
+          precioFinal: Number(row.precioFinal) || 0,
+          precioOperacion: Number(row.precioOperacion) || 0,
+          m2TerrExc: Number(row.m2TerrExc) || 0,
+          precioXM2Exc: Number(row.precioXM2Exc) || 0,
+          precioTerrExc: Number(row.precioTerrExc) || 0,
+          precioObrasAdicionales: Number(row.precioObrasAdicionales) || 0,
+          dtu: String(row.dtu).toLowerCase() === 'true' || row.dtu === 1,
+          dtuAvaluo: row.dtuAvaluo || 'SIN DTU',
+          valorAvaluo: Number(row.valorAvaluo) || 0,
+          metodoCompra: row.metodoCompra || null,
+          metodoCompraAgrupador: row.metodoCompraAgrupador || null,
+          tipoUsuario: row.tipoUsuario || null,
+          asesorExterno: String(row.asesorExterno).toLowerCase() === 'true' || row.asesorExterno === 1,
+          calle: row.calle || null,
+          manzana: row.manzana || null,
+          lote: row.lote || null,
+          condomino: row.condomino || null,
+          edificio: row.edificio || null,
+          numeroExterior: row.numeroExterior || null,
+          numeroInterior: row.numeroInterior || null,
+          diasAutorizadosApartado: Number(row.diasAutorizadosApartado) || 7,
+          nombreComprador: row.nombreComprador || null,
+          ek: row.ek || null,
+          asesor: row.asesor || null,
+          banco: row.banco || null,
+          // --- APLICAMOS EL FILTRO A TODAS LAS FECHAS ---
+          fechaApartado: parseExcelDate(row.fechaApartado),
+          fechaVenta: parseExcelDate(row.fechaVenta),
+          fechaEscritura: parseExcelDate(row.fechaEscritura),
+          fechaDesde: parseExcelDate(row.fechaDesde),
         }));
+
         onBulkImport(formattedData);
-      } catch (error) { alert('Error al procesar Excel.'); } finally {
+      } catch (error) { 
+        console.error("Error importando:", error);
+        alert('Error al procesar Excel. Verifique que el formato sea correcto.'); 
+      } finally {
         setIsUploading(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
       }
