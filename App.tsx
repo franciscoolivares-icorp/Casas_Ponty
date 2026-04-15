@@ -273,7 +273,7 @@ function App() {
             <div className="flex items-center overflow-x-auto no-scrollbar">
               
               <button onClick={() => setActiveTab('home')} className="flex-shrink-0 flex items-center hover:opacity-80 transition-opacity focus:outline-none mr-8">
-                <img src={logoPonty} alt="Casas Ponty Logo" className="h-10 w-auto object-contain" />
+                <img src={logoPonty} alt="Casas Ponty Logo" className="h-6 w-auto object-contain" />
               </button>
               
               <div className="flex space-x-6 min-w-max">

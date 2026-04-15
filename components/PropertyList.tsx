@@ -5,7 +5,8 @@ import * as XLSX from 'xlsx';
 import { 
   Edit2, Trash2, Search, Filter, X, Settings, Check, 
   ChevronLeft, ChevronRight, Edit3, GripVertical, AlertCircle, 
-  Layers, Upload, Clock, User, Eye, Download, FileSpreadsheet, Plus
+  Layers, Upload, Clock, User, Eye, Download, FileSpreadsheet, Plus,
+  ArrowUp, ArrowDown
 } from 'lucide-react';
 
 interface PropertyListProps {
@@ -22,6 +23,7 @@ interface PropertyListProps {
 
 interface ColumnConfig { id: string; label: string; visible: boolean; }
 
+// --- COLUMNAS CON DÍAS DE REZAGO AÑADIDOS PARA FILTRADO ---
 const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'desarrollo', label: 'Desarrollo', visible: true },
   { id: 'modelo', label: 'Modelo', visible: true },
@@ -37,18 +39,51 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'precioFinal', label: 'Precio Final', visible: true },
   { id: 'precioOperacion', label: 'Precio Operación', visible: true },
   { id: 'idPropiedad', label: 'ID Propiedad', visible: false },
+  { id: 'modeloAgrupador', label: 'Modelo Agrupador', visible: false },
+  { id: 'estadoAgrupador', label: 'Estado Agrupador', visible: false },
+  { id: 'numeroExterior', label: 'Num Ext', visible: false },
+  { id: 'manzana', label: 'Manzana', visible: false },
+  { id: 'lote', label: 'Lote', visible: false },
+  { id: 'precioLista', label: 'Precio Lista', visible: false },
+  { id: 'descuento', label: 'Descuento', visible: false },
+  { id: 'm2TerrExc', label: 'M2 Terr. Exc.', visible: false },
+  { id: 'precioXM2Exc', label: '$ x M2 Exc.', visible: false },
+  { id: 'precioTerrExc', label: '$ Terr. Exc.', visible: false },
+  { id: 'precioObrasAdicionales', label: '$ Obras Adic.', visible: false },
+  { id: 'valorAvaluo', label: 'Valor Avalúo', visible: false },
+  { id: 'metodoCompra', label: 'Método Compra', visible: false },
+  { id: 'metodoCompraAgrupador', label: 'Método Agrupador', visible: false },
+  { id: 'banco', label: 'Banco', visible: false },
+  { id: 'asesorExterno', label: 'Asesor Ext.', visible: false },
+  { id: 'ek', label: 'EK', visible: false },
+  { id: 'diasAutorizadosApartado', label: 'Días Aut. Apartado', visible: false },
+  { id: 'fechaApartado', label: 'Fecha Apartado', visible: false },
+  { id: 'fechaVenta', label: 'Fecha Venta', visible: false },
+  { id: 'fechaEscritura', label: 'Fecha Escritura', visible: false },
+  { id: 'fechaDesde', label: 'Fecha Desde', visible: false },
+  { id: 'titulacion', label: 'Titulación', visible: false },
+  { id: 'retroAsesor', label: 'Retro Asesor', visible: false },
+  { id: 'observaciones', label: 'Observaciones', visible: false },
+  { id: 'nombreBrokerBanco', label: 'Nombre Broker', visible: false },
+  { id: 'telefonoBrokerBanco', label: 'Tel. Broker', visible: false },
+  { id: 'correoBrokerBanco', label: 'Correo Broker', visible: false },
+  { id: 'diasRezago', label: 'Días de Rezago', visible: false },
+  { id: 'diasDesdeRevisar', label: 'Días desde Revisar', visible: false }
 ];
 
 const BULK_EDITABLE_FIELDS = [
     { key: 'precioLista', label: 'Precio de Lista', type: 'currency' },
     { key: 'descuento', label: 'Descuento (-)', type: 'currency' },
     { key: 'valorAvaluo', label: 'Valor Avalúo', type: 'currency' },
-    { key: 'dtu', label: 'DTU Físico', type: 'boolean' },
     { key: 'diasAutorizadosApartado', label: 'Días Aut. Apartado', type: 'number' },
+    { key: 'titulacion', label: 'Titulación', type: 'text' },
+    { key: 'fechaDesde', label: 'Fecha Desde', type: 'date' },
 ];
 
 const STATUS_PRIORITY: Record<string, number> = { 'APARTADO': 1, 'DISPONIBLE': 2, 'VENDIDO': 3, 'ESCRITURADO': 4 };
 const normalizeText = (text: string) => (text || "").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+interface FilterRule { id: string; field: string; operator: string; value: string; }
 
 export const PropertyList: React.FC<PropertyListProps> = ({ 
   properties, catalogs, onEdit, onView, onDelete, onBulkImport, onBulkUpdate, isAdmin, currentUser 
@@ -65,9 +100,17 @@ export const PropertyList: React.FC<PropertyListProps> = ({
   const [itemsPerPage, setItemsPerPage] = useState(50);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   
-  // --- ESTADOS DE FILTROS AVANZADOS ---
-  const [activeFilters, setActiveFilters] = useState<{field: string, value: string}[]>([]);
+  const [filterLogic, setFilterLogic] = useState<'AND' | 'OR'>('AND');
+  const [activeFilters, setActiveFilters] = useState<FilterRule[]>([]);
   const [newRuleField, setNewRuleField] = useState('desarrollo');
+  const [newRuleOperator, setNewRuleOperator] = useState('equals');
+  const [newRuleValue, setNewRuleValue] = useState('');
+
+  // --- NUEVO: NOMBRES PARA LOS FILTROS ---
+  const [filterSlot1Name, setFilterSlot1Name] = useState('Cargar 1');
+  const [filterSlot2Name, setFilterSlot2Name] = useState('Cargar 2');
+
+  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
 
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
   const [bulkEditField, setBulkEditField] = useState<string>(BULK_EDITABLE_FIELDS[0].key);
@@ -78,7 +121,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
   const [historyData, setHistoryData] = useState<any[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
-  const STORAGE_KEY_COLS = 'propertyMaster_columnConfig_v2';
+  const STORAGE_KEY_COLS = 'propertyMaster_columnConfig_v4';
 
   const esCoordinador = currentUser?.tipo_usuario === 'COORDINADOR';
   const desarrollosAsignados = currentUser?.desarrollos_asignados || [];
@@ -91,6 +134,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
+    loadFilterNames();
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
@@ -107,14 +151,20 @@ export const PropertyList: React.FC<PropertyListProps> = ({
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY_COLS, JSON.stringify(columns)); }, [columns]);
 
-  // --- LÓGICA DE EXCEL Y PLANTILLA ---
+  const loadFilterNames = () => {
+    const s1 = localStorage.getItem(`ponty_filter_set_v3_1`);
+    if (s1) setFilterSlot1Name(JSON.parse(s1).name || 'Cargar 1');
+    const s2 = localStorage.getItem(`ponty_filter_set_v3_2`);
+    if (s2) setFilterSlot2Name(JSON.parse(s2).name || 'Cargar 2');
+  };
+
   const downloadTemplate = () => {
     const templateData = [{
       idPropiedad: '', desarrollo: '', modelo: '', modeloAgrupador: '', nivel: '', estado: 'DISPONIBLE',
       estadoAgrupador: '', calle: '', numeroExterior: '', numeroInterior: '', manzana: '', lote: '',
       condomino: '', edificio: '', precioLista: 0, descuento: 0, precioFinal: 0, precioOperacion: 0,
       m2TerrExc: 0, precioXM2Exc: 0, precioTerrExc: 0, precioObrasAdicionales: 0, obrasAdicionales: '',
-      dtu: false, dtuAvaluo: 'SIN DTU', valorAvaluo: 0, metodoCompra: '', metodoCompraAgrupador: '',
+      dtuAvaluo: 'SIN DTU', valorAvaluo: 0, metodoCompra: '', metodoCompraAgrupador: '',
       banco: '', asesorExterno: false, asesor: '', nombreComprador: '', ek: '', tipoUsuario: '',
       diasAutorizadosApartado: 7, fechaApartado: '', fechaVenta: '', fechaEscritura: '', fechaDesde: '',
       retroAsesor: '', titulacion: '', nombreBrokerBanco: '', telefonoBrokerBanco: '', correoBrokerBanco: '', observaciones: ''
@@ -133,45 +183,6 @@ export const PropertyList: React.FC<PropertyListProps> = ({
     XLSX.writeFile(wb, `Inventario_Ponty_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  // --- LÓGICA DE FILTROS ---
-  const addFilter = (field: string, value: string) => {
-    if (!value) return;
-    if (!activeFilters.some(f => f.field === field && f.value === value)) {
-        setActiveFilters([...activeFilters, { field, value }]);
-        setCurrentPage(1); // Reset page on filter
-    }
-  };
-
-  const removeFilter = (field: string, value: string) => {
-    setActiveFilters(activeFilters.filter(f => !(f.field === field && f.value === value)));
-    setCurrentPage(1);
-  };
-
-  const clearFilters = () => { setActiveFilters([]); setSearchTerm(''); setCurrentPage(1); };
-
-  const saveFilterSet = (slot: number) => {
-    localStorage.setItem(`ponty_filter_set_${slot}`, JSON.stringify(activeFilters));
-    alert(`Filtros guardados en Slot ${slot}`);
-  };
-
-  const loadFilterSet = (slot: number) => {
-    const saved = localStorage.getItem(`ponty_filter_set_${slot}`);
-    if (saved) {
-        setActiveFilters(JSON.parse(saved));
-        setCurrentPage(1);
-    }
-    else alert(`Slot ${slot} vacío.`);
-  };
-
-  const getOptionsForField = (field: string) => {
-    const options = new Set<string>();
-    properties.forEach(p => {
-        const val = String(p[field as keyof Propiedad] || '');
-        if (val) options.add(val);
-    });
-    return Array.from(options).sort();
-  };
-
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -183,7 +194,6 @@ export const PropertyList: React.FC<PropertyListProps> = ({
         const workbook = XLSX.read(bstr, { type: 'binary' });
         const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
         
-        // Función para arreglar las fechas de Excel
         const parseExcelDate = (val: any) => {
           if (val === null || val === undefined) return null;
           const strVal = String(val).trim().replace(/^'/, '').trim(); 
@@ -196,18 +206,14 @@ export const PropertyList: React.FC<PropertyListProps> = ({
           return isNaN(date.getTime()) ? null : date.toISOString();
         };
 
-        // --- SOLUCIÓN: AGRUPACIÓN POR TU ID COMPUESTO ---
-        // Usamos un Map. Si el ID ya existe, sobrescribe con los datos de la fila más nueva.
-        // Esto garantiza que a Supabase lleguen 0 duplicados en el paquete masivo.
         const propertiesMap = new Map();
 
         jsonData.forEach((row: any) => {
-            // Tomamos tu identificador compuesto tal cual viene, solo quitando espacios extra
             const currentId = row.idPropiedad ? String(row.idPropiedad).trim() : '';
 
             if (currentId) {
                 const formattedRow = {
-                  idPropiedad: currentId, // <- Aquí pasa tu ID combinado
+                  idPropiedad: currentId,
                   desarrollo: row.desarrollo || null,
                   nivel: row.nivel || null,
                   modelo: row.modelo || null,
@@ -222,7 +228,6 @@ export const PropertyList: React.FC<PropertyListProps> = ({
                   precioXM2Exc: Number(row.precioXM2Exc) || 0,
                   precioTerrExc: Number(row.precioTerrExc) || 0,
                   precioObrasAdicionales: Number(row.precioObrasAdicionales) || 0,
-                  dtu: String(row.dtu).toLowerCase() === 'true' || row.dtu === 1,
                   dtuAvaluo: row.dtuAvaluo || 'SIN DTU',
                   valorAvaluo: Number(row.valorAvaluo) || 0,
                   metodoCompra: row.metodoCompra || null,
@@ -247,17 +252,16 @@ export const PropertyList: React.FC<PropertyListProps> = ({
                   fechaDesde: parseExcelDate(row.fechaDesde),
                   titulacion: row.titulacion || null,
                   retroAsesor: row.retroAsesor || null,
+                  observaciones: row.observaciones || null,
+                  nombreBrokerBanco: row.nombreBrokerBanco || null,
+                  telefonoBrokerBanco: row.telefonoBrokerBanco || null,
+                  correoBrokerBanco: row.correoBrokerBanco || null
                 };
-
-                // Guardamos en el Map usando tu ID compuesto como llave
                 propertiesMap.set(currentId, formattedRow);
             }
         });
 
-        // Convertimos los datos limpios y únicos de nuevo a un arreglo
         const finalDataToUpload = Array.from(propertiesMap.values());
-
-        // Subimos a Supabase
         onBulkImport(finalDataToUpload);
 
       } catch (error) { 
@@ -271,7 +275,6 @@ export const PropertyList: React.FC<PropertyListProps> = ({
     reader.readAsBinaryString(file);
   };
 
-  // --- LÓGICA DE TABLA, SELECCIÓN Y BITÁCORA ---
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSelectedIds(e.target.checked ? new Set(filteredProperties.map(p => p.idPropiedad)) : new Set());
   };
@@ -292,10 +295,167 @@ export const PropertyList: React.FC<PropertyListProps> = ({
     } catch (err: any) { alert("Error al cargar historial: " + err.message); } finally { setIsLoadingHistory(false); }
   };
 
+  const getOptionsForField = (field: string) => {
+    const options = new Set<string>();
+    properties.forEach(p => {
+        const val = String(p[field as keyof Propiedad] || '');
+        if (val) options.add(val);
+    });
+    return Array.from(options).sort();
+  };
+
+  const handleAddRule = () => {
+    if (newRuleOperator !== 'empty' && newRuleOperator !== 'not_empty' && !newRuleValue) return;
+    
+    const newRule: FilterRule = {
+        id: Date.now().toString(),
+        field: newRuleField,
+        operator: newRuleOperator,
+        value: newRuleValue
+    };
+    
+    setActiveFilters([...activeFilters, newRule]);
+    setNewRuleValue('');
+    setCurrentPage(1);
+  };
+
+  const removeFilter = (id: string) => {
+    setActiveFilters(activeFilters.filter(f => f.id !== id));
+    setCurrentPage(1);
+  };
+
+  const clearFilters = () => { setActiveFilters([]); setSearchTerm(''); setCurrentPage(1); };
+
+  // --- LÓGICA DE NOMBRES EN FILTROS ---
+  const saveFilterSet = (slot: number) => {
+    const defaultName = slot === 1 ? filterSlot1Name : filterSlot2Name;
+    const name = prompt(`Ingrese un nombre para identificar este filtro:`, defaultName);
+    if (!name) return; // Se canceló
+
+    const filterData = { logic: filterLogic, filters: activeFilters, name: name };
+    localStorage.setItem(`ponty_filter_set_v3_${slot}`, JSON.stringify(filterData));
+    loadFilterNames();
+    alert(`Filtros guardados como "${name}"`);
+  };
+
+  const loadFilterSet = (slot: number) => {
+    const saved = localStorage.getItem(`ponty_filter_set_v3_${slot}`);
+    if (saved) {
+        const parsed = JSON.parse(saved);
+        setFilterLogic(parsed.logic || 'AND');
+        setActiveFilters(parsed.filters || []);
+        setCurrentPage(1);
+    } else {
+        alert(`El slot ${slot} está vacío.`);
+    }
+  };
+
+  const today = new Date();
+  const getDiffDays = (dateStr?: string | null) => {
+      if (!dateStr) return null;
+      const d = new Date(dateStr + 'T12:00:00');
+      return Math.floor((today.getTime() - d.getTime()) / (1000 * 3600 * 24));
+  };
+
+  const evaluateRule = (prop: any, rule: FilterRule) => {
+    let propVal = prop[rule.field as keyof Propiedad];
+    
+    // CÁLCULO EN VIVO DE DÍAS PARA EL FILTRO
+    if (rule.field === 'diasRezago') {
+       const dApartado = getDiffDays(prop.fechaApartado);
+       propVal = prop.fechaApartado ? (dApartado ?? 0) - (prop.diasAutorizadosApartado || 0) : null;
+    } else if (rule.field === 'diasDesdeRevisar') {
+       propVal = prop.fechaDesde ? (getDiffDays(prop.fechaDesde) || 0) + 1 : null;
+    }
+
+    const valStr = String(propVal ?? '').toLowerCase();
+    const targetStr = String(rule.value).toLowerCase();
+    const numVal = Number(propVal);
+    const numTarget = Number(rule.value);
+
+    switch (rule.operator) {
+      case 'equals': return valStr === targetStr;
+      case 'not_equals': return valStr !== targetStr;
+      case 'contains': return valStr.includes(targetStr);
+      case 'greater_than': return !isNaN(numVal) && !isNaN(numTarget) ? numVal > numTarget : valStr > targetStr;
+      case 'less_than': return !isNaN(numVal) && !isNaN(numTarget) ? numVal < numTarget : valStr < targetStr;
+      case 'empty': return propVal === null || propVal === undefined || valStr === '';
+      case 'not_empty': return propVal !== null && propVal !== undefined && valStr !== '';
+      default: return true;
+    }
+  };
+
+  const requestSort = (key: string) => {
+    setSortConfig((current) => {
+      if (current && current.key === key) {
+        if (current.direction === 'asc') return { key, direction: 'desc' };
+        return null;
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const filteredProperties = useMemo(() => {
+    const term = normalizeText(searchTerm);
+    
+    let result = properties.filter(prop => {
+      if (esCoordinador && !desarrollosAsignados.includes(prop.desarrollo || '')) return false;
+      const matchesSearch = term === '' || Object.values(prop).some(v => normalizeText(String(v)).includes(term));
+      if (!matchesSearch) return false;
+      const esEscriturado = prop.estado === 'ESCRITURADO' || prop.estado === 'ESCRITURADO-P';
+      if (esEscriturado && !mostrarEscriturados) return false;
+
+      if (activeFilters.length > 0) {
+          const passed = filterLogic === 'AND'
+            ? activeFilters.every(rule => evaluateRule(prop, rule))
+            : activeFilters.some(rule => evaluateRule(prop, rule));
+          if (!passed) return false;
+      }
+      return true;
+    });
+
+    return result.sort((a, b) => {
+        if (sortConfig) {
+            let aVal = a[sortConfig.key as keyof Propiedad];
+            let bVal = b[sortConfig.key as keyof Propiedad];
+            
+            if (sortConfig.key === 'diasRezago') {
+               aVal = a.fechaApartado ? (getDiffDays(a.fechaApartado) ?? 0) - (a.diasAutorizadosApartado || 0) : -999;
+               bVal = b.fechaApartado ? (getDiffDays(b.fechaApartado) ?? 0) - (b.diasAutorizadosApartado || 0) : -999;
+            } else if (sortConfig.key === 'diasDesdeRevisar') {
+               aVal = a.fechaDesde ? (getDiffDays(a.fechaDesde) || 0) + 1 : -999;
+               bVal = b.fechaDesde ? (getDiffDays(b.fechaDesde) || 0) + 1 : -999;
+            }
+            
+            if (aVal === bVal) return 0;
+            if (aVal === null || aVal === undefined || aVal === '') return 1; 
+            if (bVal === null || bVal === undefined || bVal === '') return -1;
+            
+            if (typeof aVal === 'number' && typeof bVal === 'number') {
+               return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
+            }
+            
+            const aStr = String(aVal).toLowerCase();
+            const bStr = String(bVal).toLowerCase();
+            if (aStr < bStr) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (aStr > bStr) return sortConfig.direction === 'asc' ? 1 : -1;
+            return 0;
+        }
+        return (STATUS_PRIORITY[a.estado || ''] || 99) - (STATUS_PRIORITY[b.estado || ''] || 99);
+    });
+
+  }, [properties, searchTerm, mostrarEscriturados, esCoordinador, desarrollosAsignados, activeFilters, filterLogic, sortConfig]); 
+
+  const totalPages = Math.ceil(filteredProperties.length / itemsPerPage);
+  const paginatedProperties = filteredProperties.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
   const formatCell = (val: any, colId: string) => {
     if (val === null || val === undefined || val === '') return <span className="text-slate-400 dark:text-slate-500">-</span>;
-    if (['precioFinal', 'precioOperacion', 'precioLista', 'descuento', 'precioTerrExc', 'precioObrasAdicionales'].includes(colId)) {
+    if (['precioFinal', 'precioOperacion', 'precioLista', 'descuento', 'precioTerrExc', 'precioObrasAdicionales', 'valorAvaluo'].includes(colId)) {
         return <span className="font-medium text-slate-900 dark:text-slate-200">{new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(Number(val))}</span>;
+    }
+    if (colId === 'asesorExterno') {
+        return val ? 'SÍ' : 'NO';
     }
     if (colId === 'estado') {
         let colorClass = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
@@ -305,41 +465,18 @@ export const PropertyList: React.FC<PropertyListProps> = ({
         if (val === 'ESCRITURADO' || val === 'ESCRITURADO-P') colorClass = 'bg-slate-800 text-white dark:bg-slate-700 dark:text-slate-200';
         return <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${colorClass}`}>{String(val)}</span>;
     }
+    if (colId === 'dtuAvaluo') {
+        let colorClass = 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400';
+        if (val === 'AVALUO CERRADO') colorClass = 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-400';
+        if (val === 'CON DTU') colorClass = 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400';
+        return <span className={`px-2.5 py-1 rounded-md font-bold text-xs ${colorClass}`}>{String(val)}</span>;
+    }
     return String(val);
   };
-
-  // --- MEMOIZATION DE DATOS Y PAGINACIÓN ---
-  const filteredProperties = useMemo(() => {
-    const term = normalizeText(searchTerm);
-    return properties.filter(prop => {
-      if (esCoordinador && !desarrollosAsignados.includes(prop.desarrollo || '')) return false;
-      const matchesSearch = term === '' || Object.values(prop).some(v => normalizeText(String(v)).includes(term));
-      if (!matchesSearch) return false;
-      const esEscriturado = prop.estado === 'ESCRITURADO' || prop.estado === 'ESCRITURADO-P';
-      if (esEscriturado && !mostrarEscriturados) return false;
-
-      if (activeFilters.length > 0) {
-          const rulesByField = activeFilters.reduce((acc, rule) => {
-              if (!acc[rule.field]) acc[rule.field] = [];
-              acc[rule.field].push(rule.value);
-              return acc;
-          }, {} as Record<string, string[]>);
-          for (const field in rulesByField) {
-              if (!rulesByField[field].includes(String(prop[field as keyof Propiedad] || ''))) return false;
-          }
-      }
-      return true;
-    }).sort((a, b) => (STATUS_PRIORITY[a.estado || ''] || 99) - (STATUS_PRIORITY[b.estado || ''] || 99));
-  }, [properties, searchTerm, mostrarEscriturados, esCoordinador, desarrollosAsignados, activeFilters]); 
-
-  // AQUÍ ESTÁN DECLARADAS LAS VARIABLES DE PAGINACIÓN CORRECTAMENTE
-  const totalPages = Math.ceil(filteredProperties.length / itemsPerPage);
-  const paginatedProperties = filteredProperties.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   return (
     <div className="space-y-4 animate-in fade-in duration-500">
       
-      {/* BARRA SUPERIOR DE BÚSQUEDA Y BOTONES */}
       <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-wrap gap-4 items-center justify-between shadow-sm transition-colors relative z-20">
         
         <div className="relative flex items-center group flex-1 min-w-[250px] max-w-md">
@@ -363,7 +500,6 @@ export const PropertyList: React.FC<PropertyListProps> = ({
             <Filter className="w-4 h-4" /> Filtros Avanzados {activeFilters.length > 0 && `(${activeFilters.length})`}
           </button>
 
-          {/* LÍNEA SEPARADORA DE HERRAMIENTAS DE ADMIN */}
           {isAdmin && <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-1 hidden lg:block"></div>}
           
           {isAdmin && (
@@ -408,75 +544,95 @@ export const PropertyList: React.FC<PropertyListProps> = ({
         </div>
       </div>
 
-      {/* PANEL DE FILTROS AVANZADOS (Desplegable) */}
       {showAdvancedFilters && (
           <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-md p-6 animate-in fade-in slide-in-from-top-4 relative z-10 transition-colors">
               <div className="flex justify-between items-center mb-4">
                   <p className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2 uppercase tracking-widest">
-                      <Filter className="w-4 h-4 text-indigo-500"/> Reglas de Filtrado (AND)
+                      <Filter className="w-4 h-4 text-indigo-500"/> Filtros Avanzados
                   </p>
                   {activeFilters.length > 0 && (
                       <button onClick={clearFilters} className="text-xs font-bold text-red-500 hover:text-red-700 dark:text-red-400 uppercase tracking-wider transition-colors">Limpiar Filtros</button>
                   )}
               </div>
 
-              {/* CAJA DE REGLAS ACTIVAS (Dashed Box) */}
+              <div className="mb-4 flex items-center gap-3">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Cumplir condiciones:</span>
+                  <select className="border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg p-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 outline-none" value={filterLogic} onChange={e => setFilterLogic(e.target.value as 'AND'|'OR')}>
+                      <option value="AND">Todas (AND)</option>
+                      <option value="OR">Cualquiera (OR)</option>
+                  </select>
+              </div>
+
               <div className="border border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-5 min-h-[80px] flex flex-wrap gap-2 items-center justify-center bg-slate-50 dark:bg-slate-900/50 mb-6 transition-colors">
                   {activeFilters.length === 0 ? (
                       <span className="text-slate-400 dark:text-slate-500 text-sm italic font-medium">No hay filtros activos</span>
                   ) : (
                       <div className="flex flex-wrap gap-2 w-full justify-start">
-                          {activeFilters.map((f, idx) => (
-                              <span key={idx} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shadow-sm transition-colors">
-                                  {f.field.toUpperCase()}: <span className="font-black">{f.value}</span>
-                                  <button onClick={() => removeFilter(f.field, f.value)} className="hover:text-red-500 ml-1 bg-white/50 dark:bg-black/20 rounded-full p-0.5"><X className="w-3 h-3"/></button>
-                              </span>
-                          ))}
+                          {activeFilters.map((f) => {
+                              const opLabel = f.operator === 'equals' ? '=' : f.operator === 'not_equals' ? '!=' : f.operator === 'greater_than' ? '>' : f.operator === 'less_than' ? '<' : f.operator === 'contains' ? 'Contiene' : f.operator === 'empty' ? 'Vacío' : 'No Vacío';
+                              return (
+                                <span key={f.id} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shadow-sm transition-colors">
+                                    {f.field.toUpperCase()} <span className="text-[10px] text-indigo-500 dark:text-indigo-400">{opLabel}</span> <span className="font-black">{f.value}</span>
+                                    <button onClick={() => removeFilter(f.id)} className="hover:text-red-500 ml-1 bg-white/50 dark:bg-black/20 rounded-full p-0.5"><X className="w-3 h-3"/></button>
+                                </span>
+                              )
+                          })}
                       </div>
                   )}
               </div>
 
-              {/* HERRAMIENTAS DE AGREGAR Y GUARDAR SETS */}
               <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
                   
-                  {/* Selector para agregar nueva regla */}
                   <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
                       <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 flex items-center whitespace-nowrap uppercase tracking-wider">
-                          <Plus className="w-4 h-4 mr-1"/> Agregar Regla:
+                          <Plus className="w-4 h-4 mr-1"/> Regla:
                       </span>
                       <select className="border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg p-2.5 text-xs font-bold uppercase tracking-wider outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700 dark:text-slate-200" value={newRuleField} onChange={e => setNewRuleField(e.target.value)}>
-                          <option value="desarrollo">Desarrollo</option>
-                          <option value="modelo">Modelo</option>
-                          <option value="nivel">Nivel</option>
-                          <option value="estado">Estado</option>
-                          <option value="dtuAvaluo">DTU / Avalúo</option>
+                          {DEFAULT_COLUMNS.map(col => <option key={col.id} value={col.id}>{col.label}</option>)}
                       </select>
-                      <select className="border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg p-2.5 text-xs font-bold uppercase tracking-wider outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700 dark:text-slate-200 min-w-[200px]" value="" onChange={e => {
-                          if (e.target.value) {
-                              addFilter(newRuleField, e.target.value);
-                              e.target.value = ''; 
-                          }
-                      }}>
-                          <option value="">Seleccionar valor...</option>
-                          {getOptionsForField(newRuleField).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      
+                      <select className="border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg p-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none" value={newRuleOperator} onChange={e => setNewRuleOperator(e.target.value)}>
+                          <option value="equals">Igual a (=)</option>
+                          <option value="not_equals">Diferente (!=)</option>
+                          <option value="contains">Contiene (*)</option>
+                          <option value="greater_than">Mayor que {'>'}</option>
+                          <option value="less_than">Menor que {'<'}</option>
+                          <option value="empty">Está vacío</option>
+                          <option value="not_empty">No está vacío</option>
                       </select>
+
+                      {newRuleOperator !== 'empty' && newRuleOperator !== 'not_empty' && (
+                        <div className="relative">
+                            <input 
+                              type="text" 
+                              list={`suggestions-${newRuleField}`} 
+                              className="border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg p-2.5 text-xs font-bold uppercase tracking-wider outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700 dark:text-slate-200 min-w-[200px]" 
+                              placeholder="Escriba o seleccione..." 
+                              value={newRuleValue} 
+                              onChange={e => setNewRuleValue(e.target.value)}
+                              onKeyDown={e => e.key === 'Enter' && handleAddRule()}
+                            />
+                            <datalist id={`suggestions-${newRuleField}`}>
+                                {getOptionsForField(newRuleField).map(opt => <option key={opt} value={opt} />)}
+                            </datalist>
+                        </div>
+                      )}
+
+                      <button onClick={handleAddRule} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-xs font-bold transition-colors">Agregar</button>
                   </div>
 
-                  {/* Botones de Slots para Sets */}
                   <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center bg-slate-50 dark:bg-slate-900/50 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
-                      <button onClick={() => loadFilterSet(1)} className="px-3 py-2 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-indigo-50 dark:hover:bg-slate-700 shadow-sm transition-colors">Cargar Set 1</button>
-                      <button onClick={() => loadFilterSet(2)} className="px-3 py-2 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-indigo-50 dark:hover:bg-slate-700 shadow-sm transition-colors">Cargar Set 2</button>
-                      
+                      <button onClick={() => loadFilterSet(1)} className="px-3 py-2 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-indigo-50 dark:hover:bg-slate-700 shadow-sm transition-colors">{filterSlot1Name}</button>
+                      <button onClick={() => loadFilterSet(2)} className="px-3 py-2 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-indigo-50 dark:hover:bg-slate-700 shadow-sm transition-colors">{filterSlot2Name}</button>
                       <div className="w-px h-6 bg-slate-300 dark:bg-slate-700 mx-1"></div>
-                      
-                      <button onClick={() => saveFilterSet(1)} className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-slate-50 dark:hover:bg-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 shadow-sm transition-colors">+ Guardar 1</button>
-                      <button onClick={() => saveFilterSet(2)} className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-slate-50 dark:hover:bg-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 shadow-sm transition-colors">+ Guardar 2</button>
+                      <button onClick={() => saveFilterSet(1)} className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-slate-50 dark:hover:bg-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 shadow-sm transition-colors">+ Guardar</button>
+                      <button onClick={() => saveFilterSet(2)} className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-slate-50 dark:hover:bg-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 shadow-sm transition-colors">+ Guardar</button>
                   </div>
               </div>
           </div>
       )}
 
-      {/* TABLA PRINCIPAL */}
+      {/* TABLA PRINCIPAL CON ORDENACIÓN */}
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-md overflow-hidden relative z-0 transition-colors">
         <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
             <span className="text-sm font-bold text-slate-600 dark:text-slate-400">{filteredProperties.length} propiedades encontradas</span>
@@ -487,7 +643,22 @@ export const PropertyList: React.FC<PropertyListProps> = ({
             <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 z-10 shadow-sm">
               <tr>
                 {isAdmin && <th className="p-4 w-12 border-b border-slate-200 dark:border-slate-700"><input type="checkbox" onChange={handleSelectAll} checked={selectedIds.size === filteredProperties.length && filteredProperties.length > 0} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800" /></th>}
-                {columns.filter(c => c.visible).map(col => <th key={col.id} className="p-4 font-black text-slate-500 dark:text-slate-400 uppercase text-[10px] tracking-widest border-b border-slate-200 dark:border-slate-700 whitespace-nowrap">{col.label}</th>)}
+                
+                {columns.filter(c => c.visible).map(col => (
+                    <th 
+                        key={col.id} 
+                        onClick={() => requestSort(col.id)}
+                        className="p-4 font-black text-slate-500 dark:text-slate-400 uppercase text-[10px] tracking-widest border-b border-slate-200 dark:border-slate-700 whitespace-nowrap cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors select-none"
+                    >
+                        <div className="flex items-center gap-1">
+                            {col.label}
+                            {sortConfig?.key === col.id && (
+                                sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-500"/> : <ArrowDown className="w-3 h-3 text-indigo-500"/>
+                            )}
+                        </div>
+                    </th>
+                ))}
+                
                 <th className="p-4 text-center font-black text-slate-500 dark:text-slate-400 uppercase text-[10px] tracking-widest border-b border-slate-200 dark:border-slate-700 sticky right-0 bg-slate-100 dark:bg-slate-900 shadow-[-4px_0_6px_-1px_rgb(0,0,0,0.05)] dark:shadow-[-4px_0_6px_-1px_rgb(0,0,0,0.3)]">Acciones</th>
               </tr>
             </thead>
@@ -498,7 +669,11 @@ export const PropertyList: React.FC<PropertyListProps> = ({
                 paginatedProperties.map(prop => (
                   <tr key={prop.idPropiedad} className={`transition-colors ${selectedIds.has(prop.idPropiedad) ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-700/60'}`}>
                     {isAdmin && <td className="p-4"><input type="checkbox" checked={selectedIds.has(prop.idPropiedad)} onChange={(e) => { const next = new Set(selectedIds); e.target.checked ? next.add(prop.idPropiedad) : next.delete(prop.idPropiedad); setSelectedIds(next); }} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800" /></td>}
-                    {columns.filter(c => c.visible).map(col => <td key={col.id} className="p-4 whitespace-nowrap text-slate-700 dark:text-slate-300">{formatCell(prop[col.id as keyof Propiedad], col.id)}</td>)}
+                    {columns.filter(c => c.visible).map(col => <td key={col.id} className="p-4 whitespace-nowrap text-slate-700 dark:text-slate-300">{formatCell(
+                      col.id === 'diasRezago' ? (prop.fechaApartado ? (getDiffDays(prop.fechaApartado) ?? 0) - (prop.diasAutorizadosApartado || 0) : null) :
+                      col.id === 'diasDesdeRevisar' ? (prop.fechaDesde ? (getDiffDays(prop.fechaDesde) || 0) + 1 : null) :
+                      prop[col.id as keyof Propiedad], col.id
+                    )}</td>)}
                     <td className="p-4 text-center space-x-1 whitespace-nowrap sticky right-0 bg-white dark:bg-slate-800 group-hover:bg-slate-50 dark:group-hover:bg-slate-700/80 shadow-[-4px_0_6px_-1px_rgb(0,0,0,0.02)] transition-colors">
                       <button onClick={() => onView(prop)} className="text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 p-2 rounded-lg transition-colors"><Eye className="w-4 h-4" /></button>
                       <button onClick={() => handleOpenHistory(prop.idPropiedad)} className="text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 p-2 rounded-lg transition-colors"><Clock className="w-4 h-4" /></button>
@@ -524,7 +699,6 @@ export const PropertyList: React.FC<PropertyListProps> = ({
         </div>
       </div>
 
-      {/* MODAL EDICIÓN MASIVA */}
       {isAdmin && selectedIds.size > 0 && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-6 z-50 animate-in slide-in-from-bottom-10">
           <div className="flex flex-col"><span className="text-[10px] text-slate-400 uppercase font-black tracking-widest">Acción Masiva</span><span className="text-sm font-bold">{selectedIds.size} registros</span></div>
@@ -550,7 +724,13 @@ export const PropertyList: React.FC<PropertyListProps> = ({
               </div>
               <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nuevo Valor</label>
-                  <input className="w-full border border-slate-300 dark:border-slate-600 p-3 rounded-xl bg-white dark:bg-slate-700 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold uppercase" placeholder="Valor..." value={bulkEditValue} onChange={(e) => setBulkEditValue(e.target.value.toUpperCase())}/>
+                  <input 
+                    type={BULK_EDITABLE_FIELDS.find(f => f.key === bulkEditField)?.type === 'date' ? 'date' : 'text'}
+                    className="w-full border border-slate-300 dark:border-slate-600 p-3 rounded-xl bg-white dark:bg-slate-700 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold uppercase" 
+                    placeholder="Valor (Deje vacío para borrar)..." 
+                    value={bulkEditValue} 
+                    onChange={(e) => setBulkEditValue(e.target.value.toUpperCase())}
+                  />
               </div>
               <div className="flex gap-3 justify-end pt-4">
                   <button onClick={() => setIsBulkEditOpen(false)} className="px-5 py-2.5 text-xs font-black text-slate-500 uppercase tracking-widest hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors">Cancelar</button>
@@ -561,7 +741,6 @@ export const PropertyList: React.FC<PropertyListProps> = ({
         </div>
       )}
 
-      {/* --- MODAL DE BITÁCORA DE MOVIMIENTOS --- */}
       {historyModalId && (
         <div className="fixed inset-0 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
           <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-lg shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col max-h-[85vh] overflow-hidden transition-colors">
