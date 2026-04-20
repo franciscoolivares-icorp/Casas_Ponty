@@ -26,10 +26,12 @@ const ORDER_DTU: { [key: string]: number } = { 'AVALUO CERRADO': 1, 'CON DTU': 2
 const ORDER_MODELO: { [key: string]: number } = { 'COLONIAL': 1, 'CAPILLA': 2, 'OLIVO LT': 3, 'OLIVO': 4, 'NOGAL': 5, 'CEDRO': 6, 'MAGNOLIA': 7, 'CAOBA': 8, 'SANTANDER 1': 9, 'SANTANDER 2': 10, 'NOGAL 1': 11, 'NOGAL 2': 12 };
 const ORDER_NIVEL: { [key: string]: number } = { 'PBP': 1, 'PBF': 2, 'N1': 3, 'N2': 4, 'N3': 5, 'PBP EXC': 6, 'PBF EXC': 7, 'CASA': 8, 'CASA EXC': 9 };
 
+// --- ACTUALIZADO: SE AGREGÓ VALOR AVALÚO AL CATÁLOGO DE COLUMNAS ---
 const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'modelo', label: 'Modelo', visible: true },
   { id: 'nivel', label: 'Nivel', visible: true },
   { id: 'dtuAvaluo', label: 'DTU-Avalúo', visible: true }, 
+  { id: 'valorAvaluo', label: 'Valor Avalúo', visible: false }, 
   { id: 'calle', label: 'Calle', visible: true },
   { id: 'numeroExterior', label: 'Num Ext', visible: true },
   { id: 'condomino', label: 'Condómino', visible: true },
@@ -45,10 +47,9 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'precioFinal', label: 'Precio Final', visible: true },
 ];
 
-const STORAGE_KEY_COLS_APARTADOS = 'propertyMaster_apartados_cols_v1';
+const STORAGE_KEY_COLS_APARTADOS = 'propertyMaster_apartados_cols_v2';
 
 export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpdateProperty, currentUser }) => {
-  // NUEVO: Agregado el modo 'reallocations'
   const [viewMode, setViewMode] = useState<'catalog' | 'reservations' | 'reallocations'>('catalog');
   
   const isAdmin = currentUser?.tipo_usuario === 'ADMINISTRADOR' || currentUser?.es_admin;
@@ -116,7 +117,6 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
   const [incidentRetro, setIncidentRetro] = useState('');
   const [incidentFechaResolucion, setIncidentFechaResolucion] = useState('');
 
-  // --- NUEVO: ESTADOS Y LÓGICA DE REUBICACIONES PENDIENTES ---
   const [solicitudesReubicacion, setSolicitudesReubicacion] = useState<any[]>([]);
 
   const fetchSolicitudes = async () => {
@@ -134,9 +134,7 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
   const filteredSolicitudes = useMemo(() => {
     if (!solicitudesReubicacion) return [];
     return solicitudesReubicacion.filter(req => {
-      // Si es Admin, ve todas
       if (isAdmin) return true;
-      // Si es coordinador, validamos que la propiedad origen pertenezca a sus desarrollos
       if (isCoordinador && currentUser?.desarrollos_asignados) {
         const originProp = properties.find(p => p.idPropiedad === req.id_propiedad_origen);
         return originProp && currentUser.desarrollos_asignados.includes(originProp.desarrollo);
@@ -144,8 +142,6 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
       return false;
     });
   }, [solicitudesReubicacion, properties, isAdmin, isCoordinador, currentUser]);
-
-  // --- FIN NUEVO ---
 
   const toggleModeloSelection = (modelo: string) => setSelectedModelos(prev => prev.includes(modelo) ? prev.filter(m => m !== modelo) : [...prev, modelo]);
   const toggleNivelSelection = (nivel: string) => setSelectedNiveles(prev => prev.includes(nivel) ? prev.filter(n => n !== nivel) : [...prev, nivel]);
@@ -410,7 +406,6 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
     } catch (error) { alert('Error al reubicar: ' + error); } finally { setIsProcessing(false); }
   };
 
-  // --- LÓGICA PARA APROBAR Y RECHAZAR REUBICACIONES ---
   const handleApproveReubicacion = async (req: any) => {
     if (!window.confirm('¿Aprobar esta reubicación?')) return;
     setIsProcessing(true);
@@ -591,7 +586,6 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                    </button>
                  )}
 
-                 {/* NUEVO BOTÓN: REUBICACIONES PENDIENTES (Solo Admin o Coordinador) */}
                  {(isAdmin || isCoordinador) && (
                      <button onClick={() => { setViewMode('reallocations'); setShowOnlyIncidents(false); }} className={`flex items-center px-4 py-2.5 rounded-lg text-sm font-black uppercase tracking-wider transition-all shadow-sm ${viewMode === 'reallocations' ? 'bg-purple-600 text-white' : 'bg-white dark:bg-slate-800 text-purple-600 dark:text-purple-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
                          <ArrowRightLeft className="w-4 h-4 mr-2" /> Reubicaciones
@@ -655,7 +649,6 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                             {!isAuditor && <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider sticky right-0 bg-slate-100 dark:bg-slate-900 shadow-[-4px_0_6px_-1px_rgb(0,0,0,0.05)] z-40 align-middle">Acción</th>}
                         </tr>
                     ) : viewMode === 'reallocations' ? (
-                        // CABECERAS PARA REUBICACIONES
                         <tr>
                             <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">Comprador</th>
                             <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">Propiedad Origen</th>
@@ -682,10 +675,10 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                                 {visibleColumns.map(col => (
                                     <td key={`${prop.idPropiedad}-${col.id}`} className="px-4 py-3 whitespace-nowrap text-sm text-slate-700 dark:text-slate-300">
                                         {col.id === 'dtuAvaluo' ? (
-                                            <span className={`px-2.5 py-1 rounded-md font-bold text-xs ${prop.dtuAvaluo === 'AVALÚO CERRADO' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-400' : prop.dtuAvaluo === 'CON DTU' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}`}>
+                                            <span className={`px-2.5 py-1 rounded-md font-bold text-xs ${prop.dtuAvaluo === 'AVALUO CERRADO' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-400' : prop.dtuAvaluo === 'CON DTU' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}`}>
                                                 {String(prop[col.id] || '-')}
                                             </span>
-                                        ) : ['precioTerrExc', 'precioObrasAdicionales', 'precioLista', 'descuento', 'precioFinal'].includes(col.id as string) 
+                                        ) : ['precioTerrExc', 'precioObrasAdicionales', 'precioLista', 'descuento', 'precioFinal', 'valorAvaluo'].includes(col.id as string) 
                                             ? <span className={`font-bold ${col.id === 'descuento' ? 'text-red-500 dark:text-red-400' : 'text-slate-900 dark:text-slate-200'}`}>{formatCurrency(prop[col.id] as number)}</span>
                                             : String(prop[col.id] || '-')}
                                     </td>
@@ -698,7 +691,6 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                             </tr>
                         )) : <tr><td colSpan={visibleColumns.length + (isAuditor ? 1 : 2)} className="px-4 py-16 text-center text-slate-500 dark:text-slate-400"><Search className="w-8 h-8 mx-auto mb-3 opacity-20" /><p className="text-sm font-medium">{selectedDesarrollo ? "No hay inventario disponible con estos filtros." : "Seleccione un Desarrollo para ver el inventario disponible."}</p></td></tr>
                     ) : viewMode === 'reallocations' ? (
-                        // TABLA DE REUBICACIONES PENDIENTES
                         filteredSolicitudes.length > 0 ? filteredSolicitudes.map((req) => {
                             const originProp = properties.find(p => p.idPropiedad === req.id_propiedad_origen);
                             const targetProp = properties.find(p => p.idPropiedad === req.id_propiedad_destino);

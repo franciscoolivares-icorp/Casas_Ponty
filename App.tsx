@@ -114,7 +114,6 @@ function App() {
     else setProperties((data as Propiedad[]) || []);
   };
 
-  // Extraemos usuarios para poder mapear los correos al enviar alertas
   const fetchUsuarios = async () => {
     const { data } = await supabase.from('usuarios').select('nombre, correo');
     if (data) setUsuariosDB(data);
@@ -134,7 +133,7 @@ function App() {
     const today = new Date();
     const isManager = currentUser.es_admin || currentUser.tipo_usuario === 'COORDINADOR';
     
-    const alertas = [];
+    const alertas: any[] = [];
 
     properties.forEach(p => {
       if (p.estado === 'APARTADO' && p.fechaApartado) {
@@ -144,11 +143,9 @@ function App() {
         const diasRezago = diasTranscurridos - diasAut;
 
         if (diasRezago > 0) {
-          // Si es el asesor dueño de la venta, o si es un coordinador/admin
           if (p.asesor === currentUser.nombre) {
             alertas.push({ id: p.idPropiedad, tipo: 'rezago_propio', texto: `¡Atención! Tu apartado ${p.idPropiedad} tiene ${diasRezago} días de rezago.`, prop: p, diasRezago });
           } else if (isManager) {
-            // Si es coordinador, checar si el desarrollo le pertenece (o si es admin ve todo)
             const desarrollosManager = currentUser.desarrollos_asignados || [];
             if (currentUser.es_admin || desarrollosManager.includes(p.desarrollo)) {
               alertas.push({ id: p.idPropiedad, tipo: 'rezago_equipo', texto: `Rezago de ${diasRezago} días en ${p.idPropiedad} (${p.asesor || 'Sin Asesor'}).`, prop: p, diasRezago });
@@ -158,9 +155,8 @@ function App() {
       }
     });
 
-    return alertas.sort((a, b) => b.diasRezago - a.diasRezago); // Los más rezagados primero
+    return alertas.sort((a, b) => b.diasRezago - a.diasRezago);
   }, [properties, currentUser]);
-
 
   const handleSendAlertEmail = async (alerta: any) => {
     const prop = alerta.prop;
@@ -171,21 +167,18 @@ function App() {
       return;
     }
 
-    // AQUI PONES TU TEMPLATE ID DE ALERTAS DE EMAILJS QUE ACABAS DE CREAR
-    const TEMPLATE_ID_ALERTAS = 'template_n4fo0xb'; 
-
     setIsSendingAlert(alerta.id);
     try {
+      const asuntoGenerado = `Alerta de Rezago: ${prop.idPropiedad} - ${prop.desarrollo}`;
+      const mensajeGenerado = `Hola ${prop.asesor},\n\nTe notificamos que tu apartado ${prop.idPropiedad} en el desarrollo ${prop.desarrollo} (Modelo: ${prop.modelo}) presenta un rezago de ${alerta.diasRezago} días.\n\nPor favor, revisa el sistema lo antes posible.\n\nSaludos,\nEquipo Casas Ponty.`;
+
       await emailjs.send(
         'service_q6nzdzh', 
-        TEMPLATE_ID_ALERTAS, 
+        'template_n4fo0xb', 
         {
           to_email: asesor.correo,
-          asesor: prop.asesor,
-          id_propiedad: prop.idPropiedad,
-          desarrollo: prop.desarrollo,
-          modelo: prop.modelo,
-          dias_rezago: alerta.diasRezago
+          asunto: asuntoGenerado,
+          mensaje: mensajeGenerado
         },
         'Wk9H8F1qHcLw1V9H3'
       );
@@ -197,7 +190,6 @@ function App() {
       setIsSendingAlert(null);
     }
   };
-
 
   const logMovimiento = async (idPropiedad: string, accion: string, detalles: string) => {
     if (!idPropiedad) return;
@@ -213,17 +205,75 @@ function App() {
     }
   };
 
+  // --- ACTUALIZADO: AUDITORÍA EXTENDIDA Y FILTRO DE CORREOS ACTIVADO CON PLANTILLA UNIVERSAL ---
   const handleUpdateProperty = async (updatedProperty: Partial<Propiedad>) => {
     const { idPropiedad, ...restOfData } = updatedProperty;
     const oldProp = properties.find(p => p.idPropiedad === idPropiedad);
+    
     const { error } = await supabase.from('propiedades').update(restOfData).eq('idPropiedad', idPropiedad);
-    if (error) alert('Error al actualizar: ' + error.message);
-    else { 
+    if (error) {
+      alert('Error al actualizar: ' + error.message);
+    } else { 
       if (oldProp) {
-        if (oldProp.estado !== updatedProperty.estado && updatedProperty.estado) await logMovimiento(idPropiedad as string, 'CAMBIO DE ESTATUS', `Pasó de ${oldProp.estado || 'N/A'} a ${updatedProperty.estado}`);
-        if (oldProp.precioFinal !== updatedProperty.precioFinal && updatedProperty.precioFinal !== undefined) await logMovimiento(idPropiedad as string, 'CAMBIO DE PRECIO', `Pasó de $${oldProp.precioFinal || 0} a $${updatedProperty.precioFinal}`);
+        // 1. Auditoría Extendida de Campos Clave
+        const camposAuditar = [
+          { key: 'titulacion', label: 'Titulación' },
+          { key: 'fechaDesde', label: 'Fecha Desde' },
+          { key: 'metodoCompra', label: 'Método de Compra' },
+          { key: 'dtuAvaluo', label: 'DTU/Avalúo' },
+          { key: 'nombreComprador', label: 'Titular' },
+          { key: 'fechaResolucion', label: 'Fecha de Resolución' }
+        ];
+
+        for (const campo of camposAuditar) {
+            const oldVal = String(oldProp[campo.key as keyof Propiedad] || '');
+            const newVal = String(updatedProperty[campo.key as keyof Propiedad] || '');
+            
+            if (oldVal !== newVal && !(oldVal === '' && newVal === 'null')) {
+               await logMovimiento(
+                 idPropiedad as string, 
+                 `CAMBIO DE ${campo.label.toUpperCase()}`, 
+                 `Pasó de "${oldVal || 'N/A'}" a "${newVal || 'N/A'}"`
+               );
+            }
+        }
+
+        // 2. Registro Tradicional de Estado
+        if (oldProp.estado !== updatedProperty.estado && updatedProperty.estado) {
+           await logMovimiento(idPropiedad as string, 'CAMBIO DE ESTATUS', `Pasó de ${oldProp.estado || 'N/A'} a ${updatedProperty.estado}`);
+           
+           // 3. REGLA DE NEGOCIO: Enviar correo de cambio de estado SOLO si hay asesor vinculado
+           const asesorActual = updatedProperty.asesor || oldProp.asesor;
+           
+           if (asesorActual && asesorActual.trim() !== '') {
+              const asesorData = usuariosDB.find(u => u.nombre === asesorActual);
+              
+              if (asesorData && asesorData.correo) {
+                  const asuntoEstatus = `Actualización de Estatus: ${idPropiedad} - ${updatedProperty.desarrollo || oldProp.desarrollo}`;
+                  const mensajeEstatus = `Hola ${asesorActual},\n\nTe notificamos que ha habido un cambio en el estatus de una de tus propiedades en proceso:\n\nCliente: ${updatedProperty.nombreComprador || oldProp.nombreComprador || 'Sin Asignar'}\nDesarrollo: ${updatedProperty.desarrollo || oldProp.desarrollo} (${updatedProperty.modelo || oldProp.modelo})\nID Propiedad: ${idPropiedad}\n\nEstatus Anterior: ${oldProp.estado || 'N/A'}\nNUEVO ESTATUS: ${updatedProperty.estado}\n\nPor favor, revisa el sistema para más detalles.\n\nSaludos,\nEquipo Casas Ponty.`;
+
+                  emailjs.send(
+                      'service_q6nzdzh', 
+                      'template_n4fo0xb', 
+                      {
+                          to_email: asesorData.correo,
+                          asunto: asuntoEstatus,
+                          mensaje: mensajeEstatus
+                      },
+                      'Wk9H8F1qHcLw1V9H3' 
+                  ).then(() => console.log(`Notificación de estatus enviada a: ${asesorData.correo}`))
+                   .catch(err => console.error('Error al enviar correo de estatus:', err));
+              }
+           }
+        }
+        
+        // 4. Registro de Cambio de Precio
+        if (oldProp.precioFinal !== updatedProperty.precioFinal && updatedProperty.precioFinal !== undefined) {
+           await logMovimiento(idPropiedad as string, 'CAMBIO DE PRECIO', `Pasó de $${oldProp.precioFinal || 0} a $${updatedProperty.precioFinal}`);
+        }
       }
-      fetchProperties(); if (activeTab === 'form') setActiveTab('list'); 
+      fetchProperties(); 
+      if (activeTab === 'form') setActiveTab('list'); 
     }
   };
 
@@ -239,7 +289,7 @@ function App() {
     const { error } = await supabase.from('propiedades').update({ [field]: value }).in('idPropiedad', ids);
     if (error) alert('Error en actualización masiva: ' + error.message);
     else {
-      for (const id of ids) await logMovimiento(id, 'EDICIÓN MASIVA', `Campo '${field}' actualizado a: ${value}`);
+      for (const id of ids) await logMovimiento(id, 'EDICIÓN MASIVA', `Campo '${field}' actualizado a: ${value || 'VACÍO'}`);
       fetchProperties();
     }
   };
@@ -267,6 +317,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300 flex flex-col font-sans">
+      {/* ... nav ... */}
       <nav className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm sticky top-0 z-[60] transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
@@ -311,7 +362,6 @@ function App() {
             
             <div className="flex items-center ml-4 border-l border-slate-200 dark:border-slate-700 pl-4 space-x-3">
               
-              {/* CAMPANITA DE NOTIFICACIONES */}
               <div className="relative">
                 <button 
                   onClick={() => setShowNotifications(!showNotifications)}
@@ -345,7 +395,6 @@ function App() {
                                   <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight">{n.texto}</p>
                                   <p className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">{n.prop.desarrollo} - {n.prop.modelo}</p>
                                   
-                                  {/* Botón de enviar correo (Solo Jefes) */}
                                   {n.tipo === 'rezago_equipo' && (
                                     <button 
                                       onClick={() => handleSendAlertEmail(n)}
@@ -403,6 +452,7 @@ function App() {
                 onCancel={() => { setActiveTab('list'); setIsViewing(false); }} 
                 isEditing={!!editingProperty} 
                 isViewing={isViewing}
+                currentUser={currentUser}
               />
             )}
 

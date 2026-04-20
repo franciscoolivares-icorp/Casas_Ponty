@@ -23,7 +23,7 @@ interface PropertyListProps {
 
 interface ColumnConfig { id: string; label: string; visible: boolean; }
 
-// --- COLUMNAS CON DÍAS DE REZAGO AÑADIDOS PARA FILTRADO ---
+// --- COLUMNAS ACTUALIZADAS CON LOS NUEVOS CAMPOS (OBS. DIRECCIÓN Y FECHA RESOLUCIÓN) ---
 const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'desarrollo', label: 'Desarrollo', visible: true },
   { id: 'modelo', label: 'Modelo', visible: true },
@@ -61,9 +61,11 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'fechaVenta', label: 'Fecha Venta', visible: false },
   { id: 'fechaEscritura', label: 'Fecha Escritura', visible: false },
   { id: 'fechaDesde', label: 'Fecha Desde', visible: false },
+  { id: 'fechaResolucion', label: 'Fecha Resolución', visible: false },
   { id: 'titulacion', label: 'Titulación', visible: false },
   { id: 'retroAsesor', label: 'Retro Asesor', visible: false },
   { id: 'observaciones', label: 'Observaciones', visible: false },
+  { id: 'observacionesDireccion', label: 'Obs. Dirección', visible: false },
   { id: 'nombreBrokerBanco', label: 'Nombre Broker', visible: false },
   { id: 'telefonoBrokerBanco', label: 'Tel. Broker', visible: false },
   { id: 'correoBrokerBanco', label: 'Correo Broker', visible: false },
@@ -71,7 +73,10 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'diasDesdeRevisar', label: 'Días desde Revisar', visible: false }
 ];
 
-const BULK_EDITABLE_FIELDS = [
+type BulkFieldType = 'currency' | 'number' | 'text' | 'date' | 'select_estado' | 'select_dtu';
+const BULK_EDITABLE_FIELDS: {key: string, label: string, type: BulkFieldType}[] = [
+    { key: 'estado', label: 'Estado', type: 'select_estado' },
+    { key: 'dtuAvaluo', label: 'DTU Avalúo', type: 'select_dtu' },
     { key: 'precioLista', label: 'Precio de Lista', type: 'currency' },
     { key: 'descuento', label: 'Descuento (-)', type: 'currency' },
     { key: 'valorAvaluo', label: 'Valor Avalúo', type: 'currency' },
@@ -106,7 +111,6 @@ export const PropertyList: React.FC<PropertyListProps> = ({
   const [newRuleOperator, setNewRuleOperator] = useState('equals');
   const [newRuleValue, setNewRuleValue] = useState('');
 
-  // --- NUEVO: NOMBRES PARA LOS FILTROS ---
   const [filterSlot1Name, setFilterSlot1Name] = useState('Cargar 1');
   const [filterSlot2Name, setFilterSlot2Name] = useState('Cargar 2');
 
@@ -121,7 +125,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
   const [historyData, setHistoryData] = useState<any[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
-  const STORAGE_KEY_COLS = 'propertyMaster_columnConfig_v4';
+  const STORAGE_KEY_COLS = 'propertyMaster_columnConfig_v5';
 
   const esCoordinador = currentUser?.tipo_usuario === 'COORDINADOR';
   const desarrollosAsignados = currentUser?.desarrollos_asignados || [];
@@ -158,6 +162,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
     if (s2) setFilterSlot2Name(JSON.parse(s2).name || 'Cargar 2');
   };
 
+  // --- SE AGREGARON LOS CAMPOS NUEVOS A LA PLANTILLA DE EXCEL ---
   const downloadTemplate = () => {
     const templateData = [{
       idPropiedad: '', desarrollo: '', modelo: '', modeloAgrupador: '', nivel: '', estado: 'DISPONIBLE',
@@ -167,7 +172,8 @@ export const PropertyList: React.FC<PropertyListProps> = ({
       dtuAvaluo: 'SIN DTU', valorAvaluo: 0, metodoCompra: '', metodoCompraAgrupador: '',
       banco: '', asesorExterno: false, asesor: '', nombreComprador: '', ek: '', tipoUsuario: '',
       diasAutorizadosApartado: 7, fechaApartado: '', fechaVenta: '', fechaEscritura: '', fechaDesde: '',
-      retroAsesor: '', titulacion: '', nombreBrokerBanco: '', telefonoBrokerBanco: '', correoBrokerBanco: '', observaciones: ''
+      fechaResolucion: '', retroAsesor: '', titulacion: '', observaciones: '', observacionesDireccion: '',
+      nombreBrokerBanco: '', telefonoBrokerBanco: '', correoBrokerBanco: ''
     }];
     const ws = XLSX.utils.json_to_sheet(templateData);
     const wb = XLSX.utils.book_new();
@@ -212,6 +218,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
             const currentId = row.idPropiedad ? String(row.idPropiedad).trim() : '';
 
             if (currentId) {
+                // --- SE AGREGARON LOS CAMPOS NUEVOS AL MAPEO DEL EXCEL ---
                 const formattedRow = {
                   idPropiedad: currentId,
                   desarrollo: row.desarrollo || null,
@@ -250,9 +257,11 @@ export const PropertyList: React.FC<PropertyListProps> = ({
                   fechaVenta: parseExcelDate(row.fechaVenta),
                   fechaEscritura: parseExcelDate(row.fechaEscritura),
                   fechaDesde: parseExcelDate(row.fechaDesde),
+                  fechaResolucion: parseExcelDate(row.fechaResolucion),
                   titulacion: row.titulacion || null,
                   retroAsesor: row.retroAsesor || null,
                   observaciones: row.observaciones || null,
+                  observacionesDireccion: row.observacionesDireccion || null,
                   nombreBrokerBanco: row.nombreBrokerBanco || null,
                   telefonoBrokerBanco: row.telefonoBrokerBanco || null,
                   correoBrokerBanco: row.correoBrokerBanco || null
@@ -280,9 +289,17 @@ export const PropertyList: React.FC<PropertyListProps> = ({
   };
 
   const handleExecuteBulkUpdate = () => {
-    onBulkUpdate(Array.from(selectedIds), bulkEditField as keyof Propiedad, bulkEditValue);
+    let finalValue: any = bulkEditValue.trim() === '' ? null : bulkEditValue;
+    
+    const fieldType = BULK_EDITABLE_FIELDS.find(f => f.key === bulkEditField)?.type;
+    if (finalValue !== null && (fieldType === 'number' || fieldType === 'currency')) {
+        finalValue = Number(finalValue);
+    }
+
+    onBulkUpdate(Array.from(selectedIds), bulkEditField as keyof Propiedad, finalValue);
     setIsBulkEditOpen(false);
     setSelectedIds(new Set());
+    setBulkEditValue(''); 
   };
 
   const handleOpenHistory = async (idPropiedad: string) => {
@@ -326,11 +343,10 @@ export const PropertyList: React.FC<PropertyListProps> = ({
 
   const clearFilters = () => { setActiveFilters([]); setSearchTerm(''); setCurrentPage(1); };
 
-  // --- LÓGICA DE NOMBRES EN FILTROS ---
   const saveFilterSet = (slot: number) => {
     const defaultName = slot === 1 ? filterSlot1Name : filterSlot2Name;
     const name = prompt(`Ingrese un nombre para identificar este filtro:`, defaultName);
-    if (!name) return; // Se canceló
+    if (!name) return; 
 
     const filterData = { logic: filterLogic, filters: activeFilters, name: name };
     localStorage.setItem(`ponty_filter_set_v3_${slot}`, JSON.stringify(filterData));
@@ -360,7 +376,6 @@ export const PropertyList: React.FC<PropertyListProps> = ({
   const evaluateRule = (prop: any, rule: FilterRule) => {
     let propVal = prop[rule.field as keyof Propiedad];
     
-    // CÁLCULO EN VIVO DE DÍAS PARA EL FILTRO
     if (rule.field === 'diasRezago') {
        const dApartado = getDiffDays(prop.fechaApartado);
        propVal = prop.fechaApartado ? (dApartado ?? 0) - (prop.diasAutorizadosApartado || 0) : null;
@@ -470,6 +485,10 @@ export const PropertyList: React.FC<PropertyListProps> = ({
         if (val === 'AVALUO CERRADO') colorClass = 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-400';
         if (val === 'CON DTU') colorClass = 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400';
         return <span className={`px-2.5 py-1 rounded-md font-bold text-xs ${colorClass}`}>{String(val)}</span>;
+    }
+    // Formatear las fechas para que se vean más legibles
+    if (['fechaApartado', 'fechaVenta', 'fechaEscritura', 'fechaDesde', 'fechaResolucion'].includes(colId)) {
+        return <span className="font-medium text-slate-700 dark:text-slate-300">{String(val).split('T')[0]}</span>;
     }
     return String(val);
   };
@@ -715,6 +734,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
                 <div><h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-wider">Edición Masiva</h2><p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">Actualizando {selectedIds.size} registros</p></div>
                 <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl text-indigo-600 dark:text-indigo-400"><Layers className="w-6 h-6" /></div>
             </div>
+            
             <div className="space-y-5">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Campo a actualizar</label>
@@ -722,16 +742,41 @@ export const PropertyList: React.FC<PropertyListProps> = ({
                     {BULK_EDITABLE_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
                 </select>
               </div>
+
               <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nuevo Valor</label>
-                  <input 
-                    type={BULK_EDITABLE_FIELDS.find(f => f.key === bulkEditField)?.type === 'date' ? 'date' : 'text'}
-                    className="w-full border border-slate-300 dark:border-slate-600 p-3 rounded-xl bg-white dark:bg-slate-700 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold uppercase" 
-                    placeholder="Valor (Deje vacío para borrar)..." 
-                    value={bulkEditValue} 
-                    onChange={(e) => setBulkEditValue(e.target.value.toUpperCase())}
-                  />
+                  
+                  {BULK_EDITABLE_FIELDS.find(f => f.key === bulkEditField)?.type === 'select_estado' ? (
+                      <select 
+                          className="w-full border border-slate-300 dark:border-slate-600 p-3 rounded-xl bg-white dark:bg-slate-700 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold uppercase"
+                          value={bulkEditValue} 
+                          onChange={(e) => setBulkEditValue(e.target.value)}
+                      >
+                          <option value="">(Dejar vacío para borrar)</option>
+                          {catalogs.estado?.map(e => <option key={e} value={e}>{e}</option>)}
+                      </select>
+                  ) : BULK_EDITABLE_FIELDS.find(f => f.key === bulkEditField)?.type === 'select_dtu' ? (
+                      <select 
+                          className="w-full border border-slate-300 dark:border-slate-600 p-3 rounded-xl bg-white dark:bg-slate-700 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold uppercase"
+                          value={bulkEditValue} 
+                          onChange={(e) => setBulkEditValue(e.target.value)}
+                      >
+                          <option value="">(Dejar vacío para borrar)</option>
+                          <option value="SIN DTU">SIN DTU</option>
+                          <option value="CON DTU">CON DTU</option>
+                          <option value="AVALUO CERRADO">AVALUO CERRADO</option>
+                      </select>
+                  ) : (
+                      <input 
+                        type={BULK_EDITABLE_FIELDS.find(f => f.key === bulkEditField)?.type === 'date' ? 'date' : 'text'}
+                        className="w-full border border-slate-300 dark:border-slate-600 p-3 rounded-xl bg-white dark:bg-slate-700 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold uppercase" 
+                        placeholder="Valor (Deje vacío para borrar)..." 
+                        value={bulkEditValue} 
+                        onChange={(e) => setBulkEditValue(e.target.value.toUpperCase())}
+                      />
+                  )}
               </div>
+
               <div className="flex gap-3 justify-end pt-4">
                   <button onClick={() => setIsBulkEditOpen(false)} className="px-5 py-2.5 text-xs font-black text-slate-500 uppercase tracking-widest hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors">Cancelar</button>
                   <button onClick={handleExecuteBulkUpdate} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg active:scale-95 flex items-center transition-transform"><Check className="w-4 h-4 mr-2"/> Aplicar</button>

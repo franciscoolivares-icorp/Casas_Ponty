@@ -195,10 +195,10 @@ export interface Propiedad {
   nombreComprador?: string;
   ek?: string;
   diasAutorizadosApartado?: number;
-  url_comprobante_apartado?: string | null;
-  url_autorizacion_bancaria?: string | null;
-  url_mail_fovissste?: string | null;
-  url_solicitud_reubicacion?: string | null;
+  url_comprobante_apartado?: string[] | null;
+  url_autorizacion_bancaria?: string[] | null;
+  url_mail_fovissste?: string[] | null;
+  url_solicitud_reubicacion?: string[] | null;
   
   // --- NUEVOS CAMPOS PARA EL DETALLE ---
   modeloAgrupador?: string;
@@ -214,7 +214,7 @@ export interface Propiedad {
   nombreBrokerBanco?: string;
   telefonoBrokerBanco?: string;
   correoBrokerBanco?: string;
-  
-  // Campos Calculados (No van en la BD, pero sirven en React)
   diasDesdeRevisar?: number;
+  observacionesDireccion?: string | null;
+  fechaResolucion?: string | null;
 }
