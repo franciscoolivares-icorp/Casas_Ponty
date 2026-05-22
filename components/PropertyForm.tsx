@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Propiedad } from '../types';
+import { Propiedad, Estado } from '../types';
 import { supabase } from '../supabaseClient';
-import bcrypt from 'bcryptjs';
 import { 
   Save, Home, DollarSign, MapPin, User, 
   FileText, Layers, AlertCircle, FolderOpen, 
-  UploadCloud, CheckCircle2, Check, X, ArrowLeft, Clock, Calendar, Lock
+  UploadCloud, CheckCircle2, Check, X, ArrowLeft, Clock, Calendar
 } from 'lucide-react';
 
 interface PropertyFormProps {
@@ -20,6 +19,12 @@ interface PropertyFormProps {
   isViewing?: boolean;
   currentUser?: any; 
 }
+
+const formatNumberWithCommas = (val: string | number) => {
+  if (val === null || val === undefined || val === '') return '';
+  const num = String(val).replace(/[^0-9.]/g, '');
+  return num.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+};
 
 const InlineField = ({
   isEditing,
@@ -55,8 +60,11 @@ const InlineField = ({
   const handleChange = (v: any) => { 
       let processedValue = v;
       if (type === 'currency' || type === 'number') {
-          if (v === '' || isNaN(Number(v))) processedValue = '';
-          else processedValue = Math.round(Number(v));
+          if (v === '') processedValue = '';
+          else {
+            const rawNumber = String(v).replace(/[^0-9.]/g, '');
+            processedValue = rawNumber ? Number(rawNumber) : '';
+          }
       }
       setDraft(processedValue);
   };
@@ -64,9 +72,11 @@ const InlineField = ({
   const handleConfirm = (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); onChange(draft); };
   const handleCancel = (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); setDraft(value); };
 
+  const displayDraft = type === 'currency' ? formatNumberWithCommas(draft) : draft;
+
   return (
     <div className="relative w-full flex items-center group">
-      <div className="w-full">{children(isEditing ? draft : value, handleChange)}</div>
+      <div className="w-full">{children(isEditing ? displayDraft : value, handleChange)}</div>
       {isPending && (
         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 z-20 bg-slate-800 p-1 rounded-lg shadow-xl border border-slate-600 animate-in zoom-in-95">
           <button type="button" onClick={handleConfirm} className="p-1 text-white bg-emerald-500 hover:bg-emerald-600 rounded transition-colors"><Check className="w-4 h-4"/></button>
@@ -101,12 +111,6 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState<Record<string, boolean>>({});
 
-  const [showStatusModal, setShowStatusModal] = useState(false);
-  const [pendingStatus, setPendingStatus] = useState('');
-  const [statusPassword, setStatusPassword] = useState('');
-  const [statusPasswordError, setStatusPasswordError] = useState('');
-  const [isVerifyingStatus, setIsVerifyingStatus] = useState(false);
-
   const today = new Date();
   const getDiffDays = (dateStr?: string | null) => {
       if (!dateStr) return null;
@@ -115,7 +119,8 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
   };
 
   const diasApartado = getDiffDays(formData.fechaApartado) ?? 0;
-  const diasRezago = formData.fechaApartado ? diasApartado - (formData.diasAutorizadosApartado || 0) : 0;
+  const diasRezagoRaw = formData.fechaApartado ? diasApartado - (formData.diasAutorizadosApartado || 0) : 0;
+  const diasRezago = Math.max(0, diasRezagoRaw); // Nunca mostrar negativos
   const diasDesdeRevisar = formData.fechaDesde ? (getDiffDays(formData.fechaDesde) || 0) + 1 : 0;
 
   useEffect(() => {
@@ -166,7 +171,6 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
     }));
   }, [formData.precioLista, formData.descuento, formData.m2TerrExc, formData.precioXM2Exc, formData.precioObrasAdicionales, formData.estado]);
 
-  // --- LÓGICA DE CARGA MÚLTIPLE ---
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: keyof Propiedad) => {
     if (isViewing) return;
     const files = e.target.files;
@@ -189,7 +193,6 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
       }
 
       setFormData(prev => {
-        // Asegurar que sea arreglo para evitar errores si en DB quedó null viejo
         const currentVal = prev[field];
         const currentArray = Array.isArray(currentVal) ? currentVal : (currentVal ? [currentVal] : []);
         return { ...prev, [field]: [...currentArray, ...newUrls] };
@@ -208,30 +211,8 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
     onSubmit(finalData);
   };
 
-  const handleConfirmStatusChange = async () => {
-    setIsVerifyingStatus(true);
-    setStatusPasswordError('');
-    try {
-      if (!currentUser?.nombre) throw new Error("No se ha identificado al usuario actual.");
-      const { data: userData, error: userError } = await supabase.from('usuarios').select('password_hash').eq('nombre', currentUser.nombre).single();
-      if (userError || !userData) throw new Error("Error validando usuario.");
-      
-      if (!bcrypt.compareSync(statusPassword, userData.password_hash)) {
-        throw new Error("Contraseña incorrecta. Intente de nuevo.");
-      }
-      setFormData(prev => ({...prev, estado: pendingStatus}));
-      setShowStatusModal(false);
-      setStatusPassword('');
-    } catch (err: any) {
-      setStatusPasswordError(err.message);
-    } finally {
-      setIsVerifyingStatus(false);
-    }
-  };
-
   const getModelosDisponibles = () => formData.desarrollo ? modelAssignments[formData.desarrollo] || catalogs.modelo || [] : catalogs.modelo || [];
 
-  // --- RENDER DE CARGA MÚLTIPLE ---
   const renderFileUpload = (field: keyof Propiedad, label: string, isRequired: boolean) => {
     const isUploadingThis = isUploading[field];
     const rawVal = formData[field];
@@ -275,7 +256,6 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
                <>
                  <UploadCloud className="w-4 h-4 text-indigo-500 mr-2" />
                  <span className="text-xs font-bold text-slate-600 dark:text-slate-400">Clic para adjuntar (Múltiple)</span>
-                 {/* EL ATRIBUTO 'multiple' ES LA MAGIA AQUÍ */}
                  <input type="file" multiple accept=".pdf,image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={(e) => handleFileUpload(e, field)} disabled={isUploadingThis} />
                </>
              )}
@@ -370,24 +350,17 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 items-end">
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Estado</label>
-                {isViewing ? (
-                   <div className="text-sm font-black text-indigo-700 dark:text-indigo-400 uppercase py-2">{formData.estado}</div>
-                ) : (
-                   <select 
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.estado || 'DISPONIBLE'} onChange={v => setFormData({...formData, estado: v})}>
+                  {(val, change) => (
+                    <select 
                       className="w-full border border-indigo-300 dark:border-indigo-600 rounded-lg p-2 bg-indigo-50 dark:bg-indigo-900/20 text-sm font-bold text-indigo-700 dark:text-indigo-400 outline-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer"
-                      value={formData.estado || 'DISPONIBLE'} 
-                      onChange={(e) => {
-                         if (e.target.value !== formData.estado) {
-                            setPendingStatus(e.target.value);
-                            setStatusPassword('');
-                            setStatusPasswordError('');
-                            setShowStatusModal(true);
-                         }
-                      }}
-                   >
-                     {catalogs.estado?.map(e => <option key={e} value={e}>{e}</option>)}
-                   </select>
-                )}
+                      value={val} 
+                      onChange={(e) => change(e.target.value)}
+                    >
+                      {catalogs.estado?.map(e => <option key={e} value={e}>{e}</option>)}
+                    </select>
+                  )}
+                </InlineField>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Estado Agrupador</label>
@@ -406,7 +379,7 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Días Aut. Apartado</label>
                 <InlineField type="number" isEditing={true} isViewing={isViewing} value={formData.diasAutorizadosApartado ?? 7} onChange={v => setFormData({...formData, diasAutorizadosApartado: Number(v)})}>
-                  {(val, change) => <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div>
@@ -414,12 +387,12 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
                 <div className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase py-2">{formData.fechaApartado ? diasApartado : '-'}</div>
               </div>
               <div className="md:col-span-2">
-                <div className={`p-3 rounded-xl border ${diasRezago > 0 ? 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800' : 'bg-slate-50 border-slate-200 dark:bg-slate-800 dark:border-slate-700'}`}>
-                  <p className={`text-[10px] font-black uppercase tracking-wider mb-0.5 flex items-center gap-1 ${diasRezago > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}>
-                    {diasRezago > 0 && <AlertCircle className="w-3.5 h-3.5"/>} Días Rezago
+                <div className={`p-3 rounded-xl border ${diasRezagoRaw > 0 ? 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800' : 'bg-slate-50 border-slate-200 dark:bg-slate-800 dark:border-slate-700'}`}>
+                  <p className={`text-[10px] font-black uppercase tracking-wider mb-0.5 flex items-center gap-1 ${diasRezagoRaw > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                    {diasRezagoRaw > 0 && <AlertCircle className="w-3.5 h-3.5"/>} Días Rezago
                   </p>
-                  <p className={`text-[9px] font-bold mb-1.5 ${diasRezago > 0 ? 'text-red-500' : 'text-slate-400'}`}>Calculado: Días Apartado - Días Autorizados</p>
-                  <p className={`text-xl font-black ${diasRezago > 0 ? 'text-red-700 dark:text-red-300' : 'text-slate-700 dark:text-slate-300'}`}>{formData.fechaApartado ? diasRezago : '-'}</p>
+                  <p className={`text-[9px] font-bold mb-1.5 ${diasRezagoRaw > 0 ? 'text-red-500' : 'text-slate-400'}`}>Calculado: Días Apartado - Días Autorizados</p>
+                  <p className={`text-xl font-black ${diasRezagoRaw > 0 ? 'text-red-700 dark:text-red-300' : 'text-slate-700 dark:text-slate-300'}`}>{formData.fechaApartado && diasRezago > 0 ? diasRezago : '-'}</p>
                 </div>
               </div>
 
@@ -446,32 +419,32 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Precio de Lista</label>
                 <InlineField type="currency" isEditing={true} isViewing={isViewing} value={formData.precioLista ?? ''} onChange={v => setFormData({...formData, precioLista: Number(v)})}>
-                  {(val, change) => <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Descuento (-)</label>
                 <InlineField type="currency" isEditing={true} isViewing={isViewing} value={Math.abs(Number(formData.descuento) || 0) || ''} onChange={v => setFormData({...formData, descuento: Math.abs(Number(v))})}>
-                  {(val, change) => <input type="number" className="w-full border border-red-200 dark:border-red-900/50 rounded-lg p-2 bg-red-50 dark:bg-red-900/10 text-sm font-bold text-red-700 dark:text-red-400 outline-none" value={val} onChange={e => change(e.target.value)} />}
+                  {(val, change) => <input type="text" className="w-full border border-red-200 dark:border-red-900/50 rounded-lg p-2 bg-red-50 dark:bg-red-900/10 text-sm font-bold text-red-700 dark:text-red-400 outline-none" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">$ Obras Adicionales (+)</label>
                 <InlineField type="currency" isEditing={true} isViewing={isViewing} value={formData.precioObrasAdicionales ?? ''} onChange={v => setFormData({...formData, precioObrasAdicionales: Number(v)})}>
-                  {(val, change) => <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">M2 Terr. Excedente</label>
                 <InlineField type="number" isEditing={true} isViewing={isViewing} value={formData.m2TerrExc ?? ''} onChange={v => setFormData({...formData, m2TerrExc: Number(v)})}>
-                  {(val, change) => <input type="number" step="0.01" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">$ X M2 Exc</label>
                 <InlineField type="currency" isEditing={true} isViewing={isViewing} value={formData.precioXM2Exc ?? ''} onChange={v => setFormData({...formData, precioXM2Exc: Number(v)})}>
-                  {(val, change) => <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div>
@@ -490,7 +463,7 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Valor Avalúo</label>
                 <InlineField type="currency" isEditing={true} isViewing={isViewing} value={formData.valorAvaluo ?? ''} onChange={v => setFormData({...formData, valorAvaluo: Number(v)})}>
-                  {(val, change) => <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               
@@ -517,7 +490,7 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
               <div className="md:col-span-2">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Precio Operación</label>
                 <InlineField type="currency" isEditing={true} isViewing={isViewing} value={formData.precioOperacion ?? ''} onChange={v => setFormData({...formData, precioOperacion: Number(v)})}>
-                  {(val, change) => <input type="number" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
+                  {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div>
@@ -712,9 +685,9 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
               </h3>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {formData.dtuAvaluo === 'SIN DTU' && renderFileUpload('url_comprobante_apartado', 'Comprobante de Apartado', true)}
-                {['BANCARIO', 'COFINAVIT', 'INFO + BANCO'].includes(formData.metodoCompra || '') && renderFileUpload('url_autorizacion_bancaria', 'Autorización Bancaria', true)}
-                {formData.metodoCompra === 'FOVISSSTE TRADICIONAL' && renderFileUpload('url_mail_fovissste', 'Mail FOVISSSTE', true)}
+                {formData.dtuAvaluo === 'SIN DTU' && renderFileUpload('url_comprobante_apartado', 'Comprobante de Apartado', false)}
+                {['BANCARIO', 'COFINAVIT', 'INFO + BANCO'].includes(formData.metodoCompra || '') && renderFileUpload('url_autorizacion_bancaria', 'Autorización Bancaria', false)}
+                {formData.metodoCompra === 'FOVISSSTE TRADICIONAL' && renderFileUpload('url_mail_fovissste', 'Mail FOVISSSTE', false)}
                 {renderFileUpload('url_solicitud_reubicacion', 'Solicitud de Reubicación (Opcional)', false)}
               </div>
             </section>
@@ -722,42 +695,6 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
 
         </div>
       </form>
-
-      {showStatusModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 animate-in fade-in">
-           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-sm overflow-hidden">
-              <div className="p-6 text-center">
-                 <div className="w-14 h-14 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Lock className="w-7 h-7" />
-                 </div>
-                 <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-wider mb-2">Autorización Requerida</h3>
-                 <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-                   Cambiar el estado a <span className="font-bold text-indigo-600 dark:text-indigo-400">{pendingStatus}</span> requiere la contraseña del Coordinador.
-                 </p>
-
-                 <div className="text-left space-y-2">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Contraseña</label>
-                    <input 
-                      type="password" 
-                      placeholder="******" 
-                      className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-3 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                      value={statusPassword}
-                      onChange={(e) => setStatusPassword(e.target.value)}
-                    />
-                    {statusPasswordError && <p className="text-xs font-bold text-red-500 mt-1">{statusPasswordError}</p>}
-                 </div>
-              </div>
-              <div className="bg-slate-50 dark:bg-slate-900/50 p-4 border-t border-slate-200 dark:border-slate-700 flex gap-3">
-                 <button disabled={isVerifyingStatus} onClick={() => { setShowStatusModal(false); setStatusPassword(''); setStatusPasswordError(''); }} className="flex-1 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
-                    Cancelar
-                 </button>
-                 <button disabled={isVerifyingStatus || !statusPassword} onClick={handleConfirmStatusChange} className="flex-1 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none active:scale-95 transition-all disabled:opacity-50">
-                    {isVerifyingStatus ? 'Verificando...' : 'Autorizar'}
-                 </button>
-              </div>
-           </div>
-        </div>
-      )}
     </>
   );
 };

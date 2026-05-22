@@ -3,10 +3,9 @@ import { supabase } from '../supabaseClient';
 import { Propiedad, Estado } from '../types';
 import { 
   Settings, GripVertical, X, Check, ArrowRight, ArrowLeft, 
-  User, CreditCard, FileText, Clock, AlertTriangle, List, 
-  Search, Unlock, AlertCircle, Save, Building2, ArrowRightLeft, Lock,
-  UploadCloud, CheckCircle2, FolderOpen, Mail, ShieldAlert, Calendar,
-  CheckCircle, XCircle
+  User, CreditCard, FileText, AlertTriangle, List, 
+  Search, Unlock, AlertCircle, Save, Building2, UploadCloud, 
+  CheckCircle2, FolderOpen, Calendar, Clock
 } from 'lucide-react';
 
 interface TestViewProps {
@@ -26,7 +25,6 @@ const ORDER_DTU: { [key: string]: number } = { 'AVALUO CERRADO': 1, 'CON DTU': 2
 const ORDER_MODELO: { [key: string]: number } = { 'COLONIAL': 1, 'CAPILLA': 2, 'OLIVO LT': 3, 'OLIVO': 4, 'NOGAL': 5, 'CEDRO': 6, 'MAGNOLIA': 7, 'CAOBA': 8, 'SANTANDER 1': 9, 'SANTANDER 2': 10, 'NOGAL 1': 11, 'NOGAL 2': 12 };
 const ORDER_NIVEL: { [key: string]: number } = { 'PBP': 1, 'PBF': 2, 'N1': 3, 'N2': 4, 'N3': 5, 'PBP EXC': 6, 'PBF EXC': 7, 'CASA': 8, 'CASA EXC': 9 };
 
-// --- ACTUALIZADO: SE AGREGÓ VALOR AVALÚO AL CATÁLOGO DE COLUMNAS ---
 const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'modelo', label: 'Modelo', visible: true },
   { id: 'nivel', label: 'Nivel', visible: true },
@@ -50,12 +48,11 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
 const STORAGE_KEY_COLS_APARTADOS = 'propertyMaster_apartados_cols_v2';
 
 export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpdateProperty, currentUser }) => {
-  const [viewMode, setViewMode] = useState<'catalog' | 'reservations' | 'reallocations'>('catalog');
+  const [viewMode, setViewMode] = useState<'catalog' | 'reservations'>('catalog');
   
   const isAdmin = currentUser?.tipo_usuario === 'ADMINISTRADOR' || currentUser?.es_admin;
   const isAuditor = currentUser?.tipo_usuario === 'AUDITOR';
   const isAsesor = currentUser?.tipo_usuario === 'ASESOR';
-  const isCoordinador = currentUser?.tipo_usuario === 'COORDINADOR';
 
   const [selectedDesarrollo, setSelectedDesarrollo] = useState<string>('');
   const [selectedModelos, setSelectedModelos] = useState<string[]>([]);
@@ -97,16 +94,11 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
   const [reservationSearch, setReservationSearch] = useState('');
   const [showOnlyIncidents, setShowOnlyIncidents] = useState(false);
   
+  const [actionMenuProp, setActionMenuProp] = useState<Propiedad | null>(null);
   const [propertyToRelease, setPropertyToRelease] = useState<Propiedad | null>(null);
   
-  const [relocateProperty, setRelocateProperty] = useState<Propiedad | null>(null);
-  const [relocateTargetId, setRelocateTargetId] = useState<string>('');
-  const [relocateSearchTerm, setRelocateSearchTerm] = useState('');
   const [actionNotes, setActionNotes] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [relocateFileUrl, setRelocateFileUrl] = useState<string | null>(null);
-  const [isUploadingRelocateFile, setIsUploadingRelocateFile] = useState(false);
-
   const [releasePassword, setReleasePassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   
@@ -116,32 +108,6 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
   const [incidentProperty, setIncidentProperty] = useState<Propiedad | null>(null);
   const [incidentRetro, setIncidentRetro] = useState('');
   const [incidentFechaResolucion, setIncidentFechaResolucion] = useState('');
-
-  const [solicitudesReubicacion, setSolicitudesReubicacion] = useState<any[]>([]);
-
-  const fetchSolicitudes = async () => {
-    try {
-      const { data, error } = await supabase.from('solicitudes_reubicacion').select('*').order('created_at', { ascending: false });
-      if (error) throw error;
-      setSolicitudesReubicacion(data || []);
-    } catch (err) { console.error('Error al cargar solicitudes:', err); }
-  };
-
-  useEffect(() => { 
-    if (isAdmin || isCoordinador) fetchSolicitudes(); 
-  }, [isAdmin, isCoordinador]);
-
-  const filteredSolicitudes = useMemo(() => {
-    if (!solicitudesReubicacion) return [];
-    return solicitudesReubicacion.filter(req => {
-      if (isAdmin) return true;
-      if (isCoordinador && currentUser?.desarrollos_asignados) {
-        const originProp = properties.find(p => p.idPropiedad === req.id_propiedad_origen);
-        return originProp && currentUser.desarrollos_asignados.includes(originProp.desarrollo);
-      }
-      return false;
-    });
-  }, [solicitudesReubicacion, properties, isAdmin, isCoordinador, currentUser]);
 
   const toggleModeloSelection = (modelo: string) => setSelectedModelos(prev => prev.includes(modelo) ? prev.filter(m => m !== modelo) : [...prev, modelo]);
   const toggleNivelSelection = (nivel: string) => setSelectedNiveles(prev => prev.includes(nivel) ? prev.filter(n => n !== nivel) : [...prev, nivel]);
@@ -161,14 +127,14 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
 
   const dynamicModelos = useMemo(() => {
     if (!selectedDesarrollo) return [];
-    return Array.from(new Set(availableProperties.filter(p => p.desarrollo === selectedDesarrollo).map(p => p.modelo))).sort((a, b) => (ORDER_MODELO[a || ''] || 99) - (ORDER_MODELO[b || ''] || 99));
+    return Array.from(new Set(availableProperties.filter(p => p.desarrollo === selectedDesarrollo).map(p => p.modelo))).sort((a, b) => (ORDER_MODELO[String(a || '')] || 99) - (ORDER_MODELO[String(b || '')] || 99));
   }, [availableProperties, selectedDesarrollo]);
 
   const dynamicNiveles = useMemo(() => {
     if (!selectedDesarrollo) return [];
     let filtered = availableProperties.filter(p => p.desarrollo === selectedDesarrollo);
     if (selectedModelos.length > 0) filtered = filtered.filter(p => selectedModelos.includes(p.modelo || ''));
-    return Array.from(new Set(filtered.map(p => p.nivel))).sort((a, b) => (ORDER_NIVEL[a || ''] || 99) - (ORDER_NIVEL[b || ''] || 99));
+    return Array.from(new Set(filtered.map(p => p.nivel))).sort((a, b) => (ORDER_NIVEL[String(a || '')] || 99) - (ORDER_NIVEL[String(b || '')] || 99));
   }, [availableProperties, selectedDesarrollo, selectedModelos]);
 
   const displayProperties = useMemo(() => {
@@ -213,34 +179,28 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
       return props.filter(p => Object.values(p).some(val => val !== null && val !== undefined && String(val).toLowerCase().includes(lowerSearch)));
   }, [reservedProperties, reservationSearch, showOnlyIncidents]);
 
-  const filteredRelocateTargets = useMemo(() => {
-    if (!relocateSearchTerm) return availableProperties.slice(0, 30);
-    const term = relocateSearchTerm.toLowerCase();
-    return availableProperties.filter(p => 
-      (p.idPropiedad?.toLowerCase().includes(term)) ||
-      (p.desarrollo?.toLowerCase().includes(term)) ||
-      (p.modelo?.toLowerCase().includes(term)) ||
-      (p.calle?.toLowerCase().includes(term)) ||
-      (p.lote?.toLowerCase().includes(term))
-    ).slice(0, 30);
-  }, [availableProperties, relocateSearchTerm]);
-
-  const selectedTargetProp = useMemo(() => {
-    return availableProperties.find(p => p.idPropiedad === relocateTargetId);
-  }, [availableProperties, relocateTargetId]);
-
   useEffect(() => { setSelectedModelos([]); setSelectedNiveles([]); }, [selectedDesarrollo]);
   useEffect(() => { setSelectedNiveles(prev => prev.filter(n => dynamicNiveles.includes(n))); }, [selectedModelos, dynamicNiveles]);
 
   const formatCurrency = (amount: number | undefined) => amount === undefined || amount === null ? '-' : new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(amount);
   const toggleColumnVisibility = (id: string) => setColumns(prev => prev.map(col => col.id === id ? { ...col, visible: !col.visible } : col));
 
-  const handleSelectProperty = (prop: Propiedad) => {
+  const handleSelectProperty = (prop: Propiedad, subiendoDocs = false) => {
       setSelectedProperty(prop);
-      setReservationForm({ 
-        nombreComprador: '', metodoCompra: '', ek: '', banco: '', nombreBroker: '', telefonoBroker: '', correoBroker: '', asesorExterno: false,
-        url_comprobante_apartado: null, url_autorizacion_bancaria: null, url_mail_fovissste: null, url_solicitud_reubicacion: null
-      });
+      if(!subiendoDocs) {
+        setReservationForm({ 
+          nombreComprador: '', metodoCompra: '', ek: '', banco: '', nombreBroker: '', telefonoBroker: '', correoBroker: '', asesorExterno: false,
+          url_comprobante_apartado: null, url_autorizacion_bancaria: null, url_mail_fovissste: null, url_solicitud_reubicacion: null
+        });
+      } else {
+        setReservationForm({
+          nombreComprador: prop.nombreComprador || '', metodoCompra: prop.metodoCompra || '', ek: prop.ek || '', banco: prop.banco || '', nombreBroker: prop.nombreBrokerBanco || '', telefonoBroker: prop.telefonoBrokerBanco || '', correoBroker: prop.correoBrokerBanco || '', asesorExterno: prop.asesorExterno || false,
+          url_comprobante_apartado: Array.isArray(prop.url_comprobante_apartado) ? prop.url_comprobante_apartado[0] : prop.url_comprobante_apartado || null,
+          url_autorizacion_bancaria: Array.isArray(prop.url_autorizacion_bancaria) ? prop.url_autorizacion_bancaria[0] : prop.url_autorizacion_bancaria || null,
+          url_mail_fovissste: Array.isArray(prop.url_mail_fovissste) ? prop.url_mail_fovissste[0] : prop.url_mail_fovissste || null,
+          url_solicitud_reubicacion: null
+        });
+      }
       setFormError(null);
   };
 
@@ -265,46 +225,19 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
     }
   };
 
-  const handleRelocateFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !relocateProperty) return;
-    setIsUploadingRelocateFile(true);
-    try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `reub_${relocateProperty.idPropiedad}_${Math.random()}.${fileExt}`;
-      const { error } = await supabase.storage.from('expedientes_ponty').upload(fileName, file);
-      if (error) throw error;
-      const { data } = supabase.storage.from('expedientes_ponty').getPublicUrl(fileName);
-      setRelocateFileUrl(data.publicUrl);
-    } catch (err: any) {
-      alert('Error: ' + err.message);
-    } finally {
-      setIsUploadingRelocateFile(false);
-    }
-  };
-
   const handleReservationSubmit = (e: React.FormEvent) => {
       e.preventDefault();
       setFormError(null);
       if (!selectedProperty) return;
       if (!reservationForm.nombreComprador || !reservationForm.metodoCompra) { return setFormError("Faltan datos obligatorios."); }
 
-      if (selectedProperty.dtuAvaluo === 'SIN DTU' && !reservationForm.url_comprobante_apartado) {
-        return setFormError("La propiedad está 'SIN DTU', debes subir el Comprobante de Apartado.");
-      }
-      if (['BANCARIO', 'COFINAVIT', 'INFO + BANCO'].includes(reservationForm.metodoCompra || '') && !reservationForm.url_autorizacion_bancaria) {
-        return setFormError(`Para el método ${reservationForm.metodoCompra}, la Autorización Bancaria es obligatoria.`);
-      }
-      if (reservationForm.metodoCompra === 'FOVISSSTE TRADICIONAL' && !reservationForm.url_mail_fovissste) {
-        return setFormError("Para FOVISSSTE TRADICIONAL, el Mail FOVISSSTE es obligatorio.");
-      }
-      
       const isBanking = (catalogs.elementosHabilitarBanco || []).includes(reservationForm.metodoCompra);
       onUpdateProperty({
           idPropiedad: selectedProperty.idPropiedad, estado: Estado.APARTADO, nombreComprador: reservationForm.nombreComprador.toUpperCase(),
           metodoCompra: reservationForm.metodoCompra, ek: reservationForm.ek, asesorExterno: reservationForm.asesorExterno, 
           asesor: isAsesor ? currentUser.nombre : selectedProperty.asesor,
-          fechaApartado: new Date().toISOString().split('T')[0], precioOperacion: selectedProperty.precioFinal, 
+          fechaApartado: selectedProperty.fechaApartado || new Date().toISOString().split('T')[0], 
+          precioOperacion: selectedProperty.precioFinal, 
           banco: isBanking ? reservationForm.banco : null, nombreBrokerBanco: isBanking ? reservationForm.nombreBroker.toUpperCase() : null,
           telefonoBrokerBanco: isBanking ? reservationForm.telefonoBroker : null, correoBrokerBanco: isBanking ? reservationForm.correoBroker : null,
           url_comprobante_apartado: reservationForm.url_comprobante_apartado,
@@ -343,125 +276,6 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
       } catch (error) { alert('Error al cancelar: ' + error); } finally { setIsProcessing(false); }
   };
 
-  const handleRelocateConfirm = async () => {
-    if (!relocateProperty || !relocateTargetId) return;
-    setIsProcessing(true);
-    
-    const targetProp = availableProperties.find(p => p.idPropiedad === relocateTargetId);
-    if (!targetProp) return;
-
-    try {
-        if (relocateProperty.estado === 'VENDIDO') {
-            if (!relocateFileUrl) {
-                alert('Para reubicar una propiedad VENDIDA, es obligatorio adjuntar la solicitud firmada.');
-                setIsProcessing(false);
-                return;
-            }
-
-            await supabase.from('solicitudes_reubicacion').insert([{
-                id_propiedad_origen: relocateProperty.idPropiedad,
-                id_propiedad_destino: relocateTargetId,
-                nombre_comprador: relocateProperty.nombreComprador,
-                asesor: currentUser.nombre,
-                url_documento: relocateFileUrl,
-                notas: actionNotes.toUpperCase()
-            }]);
-
-            await supabase.from('propiedades').update({ estado: 'PENDIENTE APROBACIÓN' }).eq('idPropiedad', relocateProperty.idPropiedad);
-            await supabase.from('propiedades').update({ estado: 'BLOQUEADO (REUBICACIÓN)' }).eq('idPropiedad', relocateTargetId);
-            
-            onUpdateProperty({ idPropiedad: relocateProperty.idPropiedad, estado: 'PENDIENTE APROBACIÓN' });
-            fetchSolicitudes(); // Recargamos solicitudes pendientes
-            alert('Se ha enviado la solicitud de reubicación a Coordinación para su revisión.');
-        } else {
-            await supabase.from('historial_cancelaciones').insert([{
-                idPropiedad: relocateProperty.idPropiedad, desarrollo: relocateProperty.desarrollo,
-                modelo: relocateProperty.modelo, nombreComprador: relocateProperty.nombreComprador,
-                precioFinal: relocateProperty.precioFinal, motivo: 'REUBICACIÓN', propiedadDestino: relocateTargetId, notas: actionNotes.toUpperCase()
-            }]);
-
-            const newPropData: Partial<Propiedad> = {
-                idPropiedad: targetProp.idPropiedad, estado: Estado.APARTADO, nombreComprador: relocateProperty.nombreComprador, 
-                metodoCompra: relocateProperty.metodoCompra, ek: relocateProperty.ek, asesorExterno: relocateProperty.asesorExterno,
-                asesor: relocateProperty.asesor, fechaApartado: new Date().toISOString().split('T')[0], precioOperacion: targetProp.precioFinal, 
-                banco: relocateProperty.banco, nombreBrokerBanco: relocateProperty.nombreBrokerBanco, telefonoBrokerBanco: relocateProperty.telefonoBrokerBanco, 
-                correoBrokerBanco: relocateProperty.correoBrokerBanco, url_comprobante_apartado: relocateProperty.url_comprobante_apartado,
-                url_autorizacion_bancaria: relocateProperty.url_autorizacion_bancaria, url_mail_fovissste: relocateProperty.url_mail_fovissste
-            };
-            
-            const oldPropData: Partial<Propiedad> = {
-                idPropiedad: relocateProperty.idPropiedad, estado: Estado.DISPONIBLE, fechaApartado: null, precioOperacion: 0, nombreComprador: null, 
-                banco: null, nombreBrokerBanco: null, telefonoBrokerBanco: null, correoBrokerBanco: null, ek: null, metodoCompra: null, 
-                metodoCompraAgrupador: null, titulacion: null, fechaDesde: null, asesorExterno: false, asesor: null,
-                url_comprobante_apartado: null, url_autorizacion_bancaria: null, url_mail_fovissste: null
-            };
-
-            await supabase.from('propiedades').update(newPropData).eq('idPropiedad', targetProp.idPropiedad);
-            await supabase.from('propiedades').update(oldPropData).eq('idPropiedad', relocateProperty.idPropiedad);
-            onUpdateProperty(oldPropData);
-            alert('Reubicación completada con éxito.');
-        }
-        setRelocateProperty(null); setRelocateTargetId(''); setRelocateSearchTerm('');
-        setActionNotes(''); setRelocateFileUrl(null);
-    } catch (error) { alert('Error al reubicar: ' + error); } finally { setIsProcessing(false); }
-  };
-
-  const handleApproveReubicacion = async (req: any) => {
-    if (!window.confirm('¿Aprobar esta reubicación?')) return;
-    setIsProcessing(true);
-    try {
-        const originProp = properties.find(p => p.idPropiedad === req.id_propiedad_origen);
-        const targetProp = properties.find(p => p.idPropiedad === req.id_propiedad_destino);
-        if (!originProp || !targetProp) throw new Error("No se encontraron las propiedades en el inventario actual.");
-
-        await supabase.from('historial_cancelaciones').insert([{
-            idPropiedad: originProp.idPropiedad, desarrollo: originProp.desarrollo,
-            modelo: originProp.modelo, nombreComprador: originProp.nombreComprador,
-            precioFinal: originProp.precioFinal, motivo: 'REUBICACIÓN APROBADA', propiedadDestino: targetProp.idPropiedad, notas: req.notas
-        }]);
-
-        const newPropData: Partial<Propiedad> = {
-            idPropiedad: targetProp.idPropiedad, estado: 'VENDIDO', nombreComprador: originProp.nombreComprador,
-            metodoCompra: originProp.metodoCompra, ek: originProp.ek, asesorExterno: originProp.asesorExterno,
-            asesor: originProp.asesor, fechaApartado: originProp.fechaApartado, precioOperacion: targetProp.precioFinal,
-            banco: originProp.banco, nombreBrokerBanco: originProp.nombreBrokerBanco, telefonoBrokerBanco: originProp.telefonoBrokerBanco,
-            correoBrokerBanco: originProp.correoBrokerBanco, url_comprobante_apartado: originProp.url_comprobante_apartado,
-            url_autorizacion_bancaria: originProp.url_autorizacion_bancaria, url_mail_fovissste: originProp.url_mail_fovissste
-        };
-
-        const oldPropData: Partial<Propiedad> = {
-            idPropiedad: originProp.idPropiedad, estado: Estado.DISPONIBLE, fechaApartado: null, precioOperacion: 0, nombreComprador: null,
-            banco: null, nombreBrokerBanco: null, telefonoBrokerBanco: null, correoBrokerBanco: null, ek: null, metodoCompra: null,
-            metodoCompraAgrupador: null, titulacion: null, fechaDesde: null, asesorExterno: false, asesor: null,
-            url_comprobante_apartado: null, url_autorizacion_bancaria: null, url_mail_fovissste: null, retroAsesor: null
-        };
-
-        await supabase.from('propiedades').update(newPropData).eq('idPropiedad', targetProp.idPropiedad);
-        await supabase.from('propiedades').update(oldPropData).eq('idPropiedad', originProp.idPropiedad);
-        await supabase.from('solicitudes_reubicacion').delete().eq('id', req.id);
-
-        onUpdateProperty(oldPropData);
-        onUpdateProperty(newPropData);
-        fetchSolicitudes();
-        alert('Reubicación aprobada exitosamente.');
-    } catch (e: any) { alert('Error al aprobar: ' + e.message); } finally { setIsProcessing(false); }
-  };
-
-  const handleRejectReubicacion = async (req: any) => {
-    if (!window.confirm('¿Rechazar esta reubicación? Las propiedades volverán a su estado anterior.')) return;
-    setIsProcessing(true);
-    try {
-        await supabase.from('propiedades').update({ estado: 'VENDIDO' }).eq('idPropiedad', req.id_propiedad_origen);
-        await supabase.from('propiedades').update({ estado: 'DISPONIBLE' }).eq('idPropiedad', req.id_propiedad_destino);
-        await supabase.from('solicitudes_reubicacion').delete().eq('id', req.id);
-
-        onUpdateProperty({ idPropiedad: req.id_propiedad_origen, estado: 'VENDIDO' });
-        onUpdateProperty({ idPropiedad: req.id_propiedad_destino, estado: 'DISPONIBLE' });
-        fetchSolicitudes();
-        alert('Reubicación rechazada.');
-    } catch (e: any) { alert('Error al rechazar: ' + e.message); } finally { setIsProcessing(false); }
-  };
-
   const handleSaveIncident = async () => {
       if (!incidentProperty) return;
       setIsProcessing(true);
@@ -482,14 +296,14 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
 
   const visibleColumns = columns.filter(c => c.visible);
 
-  const renderFileUpload = (field: string, label: string, isRequired: boolean) => {
+  const renderFileUpload = (field: string, label: string) => {
     const isUploadingThis = isUploading[field];
     const hasFile = !!(reservationForm as any)[field];
 
     return (
       <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
         <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">
-          {label} {isRequired && <span className="text-red-500 ml-1">* Obligatorio</span>}
+          {label}
         </label>
         {hasFile ? (
           <div className="flex items-center justify-between bg-emerald-50 dark:bg-emerald-900/20 p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-800/50">
@@ -568,7 +382,7 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                 <div className="w-full lg:max-w-md flex gap-4">
                     <div className="flex-1">
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                        Búsqueda en {viewMode === 'reallocations' ? 'Reubicaciones' : (isAsesor ? 'Mis Clientes' : 'Apartados')}
+                        Búsqueda en Mis Clientes / Apartados
                       </label>
                       <div className="relative">
                           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-500" />
@@ -580,17 +394,10 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
 
               <div className="flex flex-wrap items-center gap-3 lg:mt-6">
                  
-                 {revisarCount > 0 && viewMode !== 'reallocations' && (
+                 {revisarCount > 0 && (
                    <button onClick={() => { setViewMode('reservations'); setShowOnlyIncidents(!showOnlyIncidents); }} className={`flex items-center px-4 py-2.5 rounded-lg text-sm font-black uppercase tracking-wider transition-all shadow-sm ${showOnlyIncidents ? 'bg-red-700 text-white' : 'bg-red-600 text-white hover:bg-red-700'}`}>
                      <AlertTriangle className="w-4 h-4 mr-2" /> REVISAR {revisarCount}
                    </button>
-                 )}
-
-                 {(isAdmin || isCoordinador) && (
-                     <button onClick={() => { setViewMode('reallocations'); setShowOnlyIncidents(false); }} className={`flex items-center px-4 py-2.5 rounded-lg text-sm font-black uppercase tracking-wider transition-all shadow-sm ${viewMode === 'reallocations' ? 'bg-purple-600 text-white' : 'bg-white dark:bg-slate-800 text-purple-600 dark:text-purple-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
-                         <ArrowRightLeft className="w-4 h-4 mr-2" /> Reubicaciones
-                         {filteredSolicitudes.length > 0 && <span className="ml-2 bg-red-500 text-white px-2 py-0.5 rounded-full text-[10px]">{filteredSolicitudes.length}</span>}
-                     </button>
                  )}
 
                  {viewMode === 'catalog' && (
@@ -630,12 +437,12 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden transition-colors">
         <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2">
-            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${viewMode === 'catalog' ? 'bg-green-100 text-green-800 border border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' : viewMode === 'reallocations' ? 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400' : (showOnlyIncidents ? 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-400' : 'bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800')}`}>
-                {viewMode === 'catalog' ? 'Catálogo Disponible' : viewMode === 'reallocations' ? 'Reubicaciones Pendientes' : (showOnlyIncidents ? 'Incidencias Pendientes' : (isAsesor ? 'Mis Clientes' : 'Inventario Apartado'))}
+            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${viewMode === 'catalog' ? 'bg-green-100 text-green-800 border border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' : (showOnlyIncidents ? 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-400' : 'bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800')}`}>
+                {viewMode === 'catalog' ? 'Catálogo Disponible' : (showOnlyIncidents ? 'Incidencias Pendientes' : (isAsesor ? 'Mis Clientes' : 'Inventario Apartado'))}
             </span>
           </div>
           <span className="text-xs font-bold text-slate-500 dark:text-slate-400 bg-slate-200/50 dark:bg-slate-800 px-2.5 py-1 rounded-md uppercase tracking-wider">
-              {viewMode === 'catalog' ? displayProperties.length : viewMode === 'reallocations' ? filteredSolicitudes.length : filteredReservedProperties.length} registros
+              {viewMode === 'catalog' ? displayProperties.length : filteredReservedProperties.length} registros
           </span>
         </div>
 
@@ -647,15 +454,6 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                             <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-10">#</th>
                             {visibleColumns.map(col => <th key={col.id} className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">{col.label}</th>)}
                             {!isAuditor && <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider sticky right-0 bg-slate-100 dark:bg-slate-900 shadow-[-4px_0_6px_-1px_rgb(0,0,0,0.05)] z-40 align-middle">Acción</th>}
-                        </tr>
-                    ) : viewMode === 'reallocations' ? (
-                        <tr>
-                            <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">Comprador</th>
-                            <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">Propiedad Origen</th>
-                            <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">Propiedad Destino</th>
-                            <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">Asesor</th>
-                            <th className="px-4 py-3 text-center text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">Documento</th>
-                            <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider sticky right-0 bg-slate-100 dark:bg-slate-900 shadow-[-4px_0_6px_-1px_rgb(0,0,0,0.05)] z-40 align-middle">Aprobación</th>
                         </tr>
                     ) : (
                         <tr>
@@ -690,49 +488,13 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                                 )}
                             </tr>
                         )) : <tr><td colSpan={visibleColumns.length + (isAuditor ? 1 : 2)} className="px-4 py-16 text-center text-slate-500 dark:text-slate-400"><Search className="w-8 h-8 mx-auto mb-3 opacity-20" /><p className="text-sm font-medium">{selectedDesarrollo ? "No hay inventario disponible con estos filtros." : "Seleccione un Desarrollo para ver el inventario disponible."}</p></td></tr>
-                    ) : viewMode === 'reallocations' ? (
-                        filteredSolicitudes.length > 0 ? filteredSolicitudes.map((req) => {
-                            const originProp = properties.find(p => p.idPropiedad === req.id_propiedad_origen);
-                            const targetProp = properties.find(p => p.idPropiedad === req.id_propiedad_destino);
-                            return (
-                                <tr key={req.id} className="hover:bg-purple-50/30 dark:hover:bg-slate-700/50 transition-colors group">
-                                    <td className="px-4 py-3 whitespace-nowrap text-sm font-bold text-slate-900 dark:text-white truncate max-w-[150px]">{req.nombre_comprador}</td>
-                                    <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600 dark:text-slate-400">
-                                        <span className="font-bold text-red-600 dark:text-red-400">{originProp?.desarrollo} - {originProp?.modelo}</span><br/>
-                                        ID: {req.id_propiedad_origen}
-                                    </td>
-                                    <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600 dark:text-slate-400">
-                                        <span className="font-bold text-emerald-600 dark:text-emerald-400">{targetProp?.desarrollo} - {targetProp?.modelo}</span><br/>
-                                        ID: {req.id_propiedad_destino}
-                                    </td>
-                                    <td className="px-4 py-3 whitespace-nowrap text-xs font-bold text-slate-800 dark:text-slate-200">{req.asesor}</td>
-                                    <td className="px-4 py-3 whitespace-nowrap text-center">
-                                        {req.url_documento ? (
-                                            <a href={req.url_documento} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-purple-600 hover:text-purple-800 dark:text-purple-400 transition-colors bg-purple-100 dark:bg-purple-900/30 px-2 py-1 rounded-md">
-                                                <FileText className="w-3.5 h-3.5"/> PDF Firmado
-                                            </a>
-                                        ) : <span className="text-slate-300 dark:text-slate-600">-</span>}
-                                    </td>
-                                    <td className="px-4 py-2 whitespace-nowrap text-right sticky right-0 bg-white dark:bg-slate-800 transition-colors shadow-[-4px_0_6px_-1px_rgb(0,0,0,0.02)] align-middle z-10 group-hover:bg-purple-50 dark:group-hover:bg-slate-700/80">
-                                        <div className="flex justify-end gap-2">
-                                            <button disabled={isProcessing} onClick={() => handleApproveReubicacion(req)} className="p-1.5 bg-emerald-100 hover:bg-emerald-600 text-emerald-700 hover:text-white rounded-lg transition-colors" title="Aprobar"><CheckCircle className="w-5 h-5"/></button>
-                                            <button disabled={isProcessing} onClick={() => handleRejectReubicacion(req)} className="p-1.5 bg-red-100 hover:bg-red-600 text-red-700 hover:text-white rounded-lg transition-colors" title="Rechazar"><XCircle className="w-5 h-5"/></button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            );
-                        }) : <tr><td colSpan={6} className="px-4 py-16 text-center text-slate-500 dark:text-slate-400"><ArrowRightLeft className="w-8 h-8 mx-auto mb-3 opacity-20" /><p className="text-sm font-medium">No hay solicitudes de reubicación pendientes.</p></td></tr>
                     ) : (
                         filteredReservedProperties.length > 0 ? filteredReservedProperties.map((prop) => {
-                            const status = (prop.estado || '').toUpperCase();
-                            const isReubicar = status === 'VENDIDO' || status === 'VENDIDO-P' || status === 'PREVENTA';
-                            
                             return (
                               <tr key={prop.idPropiedad} className="transition-colors group hover:bg-amber-50/30 dark:hover:bg-slate-700/50">
                                   <td className="px-4 py-3 whitespace-nowrap text-sm font-bold text-slate-900 dark:text-white truncate max-w-[200px]">{prop.nombreComprador || '-'}</td>
                                   <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600 dark:text-slate-400">{prop.desarrollo} <br/> <span className="font-bold">{prop.modelo}</span></td>
                                   
-                                  {/* UBICACIÓN CONCATENADA */}
                                   <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-600 dark:text-slate-400">
                                       {prop.nivel} <span className="text-slate-300 dark:text-slate-600">|</span> Cond: <span className="font-bold text-slate-800 dark:text-slate-200">{prop.condomino || '-'}</span> <span className="text-slate-300 dark:text-slate-600">|</span> Edif: <span className="font-bold text-slate-800 dark:text-slate-200">{prop.edificio || '-'}</span> <span className="text-slate-300 dark:text-slate-600">|</span> Int: <span className="font-bold text-slate-800 dark:text-slate-200">{prop.numeroInterior || '-'}</span>
                                   </td>
@@ -743,22 +505,16 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                                             onClick={() => { setIncidentProperty(prop); setIncidentRetro(prop.retroAsesor || ''); setIncidentFechaResolucion((prop as any).fechaResolucion || ''); }} 
                                             className="px-3 py-1.5 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded-md text-[10px] font-black uppercase tracking-widest hover:bg-orange-200 transition-colors shadow-sm"
                                           >
-                                              ATIENDE {prop.diasDesdeRevisar}
+                                              REVISAR {prop.diasDesdeRevisar}
                                           </button>
                                       ) : <span className="text-slate-300 dark:text-slate-600 font-bold">-</span>}
                                   </td>
 
                                   {!isAuditor && (
                                       <td className="px-4 py-2 whitespace-nowrap text-right sticky right-0 bg-white dark:bg-slate-800 transition-colors shadow-[-4px_0_6px_-1px_rgb(0,0,0,0.02)] align-middle z-10 group-hover:bg-amber-50 dark:group-hover:bg-slate-700/80">
-                                          {isReubicar ? (
-                                              <button onClick={() => setRelocateProperty(prop)} className="inline-flex items-center px-4 py-1.5 border border-indigo-200 dark:border-indigo-800 text-xs font-bold rounded-lg text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-600 hover:text-white dark:hover:text-white transition-all uppercase tracking-wider shadow-sm">
-                                                  <ArrowRightLeft className="w-3.5 h-3.5 mr-1.5" /> Reubicar
-                                              </button>
-                                          ) : (
-                                              <button onClick={() => {setPropertyToRelease(prop); setPasswordError(''); setReleasePassword('');}} className="inline-flex items-center px-4 py-1.5 border border-slate-200 dark:border-slate-600 text-xs font-bold rounded-lg text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:border-red-500 hover:text-red-600 dark:hover:text-red-400 transition-all uppercase tracking-wider shadow-sm">
-                                                  <Unlock className="w-3.5 h-3.5 mr-1.5" /> Liberar
-                                              </button>
-                                          )}
+                                            <button onClick={() => setActionMenuProp(prop)} className="inline-flex items-center px-4 py-1.5 border border-slate-200 dark:border-slate-600 text-xs font-bold rounded-lg text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all uppercase tracking-wider shadow-sm">
+                                                Cancelar Apartado
+                                            </button>
                                       </td>
                                   )}
                               </tr>
@@ -823,7 +579,7 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
 
                   <div className="space-y-1.5">
                      <label className="flex items-center text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest ml-1">
-                        <Calendar className="w-3.5 h-3.5 mr-1" /> Fecha compromiso de resolución
+                        <Calendar className="w-3.5 h-3.5 mr-1" /> Fecha de resolución
                      </label>
                      <input 
                         type="date" 
@@ -845,14 +601,38 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
           </div>
       )}
 
-      {/* --- MODAL DE APARTADO CON SUBIDA DE ARCHIVOS --- */}
+      {/* --- MODAL INTERMEDIO DE ACCIÓN CANCELAR APARTADO --- */}
+      {actionMenuProp && !isAuditor && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in zoom-in-95 duration-200">
+             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col p-6">
+                <div className="text-center mb-6">
+                   <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto mb-2" />
+                   <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-wider">Acción Requerida</h3>
+                   <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">¿Qué desea hacer con el apartado de <span className="font-bold">{actionMenuProp.nombreComprador}</span>?</p>
+                </div>
+                <div className="flex flex-col gap-3">
+                   <button onClick={() => { handleSelectProperty(actionMenuProp, true); setActionMenuProp(null); }} className="w-full bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-400 font-bold py-3.5 rounded-xl transition-colors border border-indigo-200 dark:border-indigo-800">
+                      Subir Documentos
+                   </button>
+                   <button onClick={() => { setPropertyToRelease(actionMenuProp); setActionMenuProp(null); setPasswordError(''); setReleasePassword(''); }} className="w-full bg-red-50 hover:bg-red-100 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 font-bold py-3.5 rounded-xl transition-colors border border-red-200 dark:border-red-800">
+                      Cancelar Apartado
+                   </button>
+                   <button onClick={() => setActionMenuProp(null)} className="mt-2 text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 uppercase tracking-widest">
+                      Volver
+                   </button>
+                </div>
+             </div>
+          </div>
+      )}
+
+      {/* --- MODAL DE APARTADO / SUBIDA DE ARCHIVOS --- */}
       {selectedProperty && viewMode === 'catalog' && !isAuditor && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="fixed inset-0 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm transition-opacity" onClick={() => setSelectedProperty(null)}></div>
             <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-700">
                 <div className="bg-indigo-600 px-6 py-4 flex justify-between items-center">
                     <div>
-                      <h3 className="text-lg font-black text-white uppercase tracking-wider">Confirmar Apartado</h3>
+                      <h3 className="text-lg font-black text-white uppercase tracking-wider">{reservationForm.nombreComprador ? 'Completar Expediente' : 'Confirmar Apartado'}</h3>
                       <p className="text-xs text-indigo-200 font-medium mt-0.5">Propiedad ID: {selectedProperty.idPropiedad} | DTU: {selectedProperty.dtuAvaluo}</p>
                     </div>
                     <button onClick={() => setSelectedProperty(null)} className="text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-lg"><X className="w-5 h-5" /></button>
@@ -882,17 +662,17 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
 
                         <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
                           <h4 className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                            <FolderOpen className="w-4 h-4" /> Expediente Digital (Obligatorios)
+                            <FolderOpen className="w-4 h-4" /> Expediente Digital (Opcional en este paso)
                           </h4>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {selectedProperty.dtuAvaluo === 'SIN DTU' && 
-                              renderFileUpload('url_comprobante_apartado', 'Comprobante de Apartado', true)
+                              renderFileUpload('url_comprobante_apartado', 'Comprobante de Apartado')
                             }
                             {['BANCARIO', 'COFINAVIT', 'INFO + BANCO'].includes(reservationForm.metodoCompra || '') && 
-                              renderFileUpload('url_autorizacion_bancaria', 'Autorización Bancaria', true)
+                              renderFileUpload('url_autorizacion_bancaria', 'Autorización Bancaria')
                             }
                             {reservationForm.metodoCompra === 'FOVISSSTE TRADICIONAL' && 
-                              renderFileUpload('url_mail_fovissste', 'Mail FOVISSSTE', true)
+                              renderFileUpload('url_mail_fovissste', 'Mail FOVISSSTE')
                             }
                           </div>
                           
@@ -931,7 +711,7 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                         
                         <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-xl border border-red-100 dark:border-red-900/50">
                             <label className="flex items-center text-xs font-bold text-red-800 dark:text-red-300 uppercase tracking-wider mb-2">
-                                <Lock className="w-3.5 h-3.5 mr-1.5" /> Confirma tu contraseña
+                                <Unlock className="w-3.5 h-3.5 mr-1.5" /> Confirma tu contraseña
                             </label>
                             <input 
                                 type="password" 
@@ -945,111 +725,6 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                 <div className="bg-slate-50 dark:bg-slate-900/50 p-4 flex gap-3 border-t border-slate-200 dark:border-slate-700">
                     <button disabled={isProcessing} className="flex-1 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-xs font-bold text-slate-700 dark:text-slate-300 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 uppercase tracking-wider transition-colors" onClick={() => {setPropertyToRelease(null); setActionNotes(''); setReleasePassword(''); setPasswordError('');}}>Cancelar</button>
                     <button disabled={isProcessing || !releasePassword} className="flex-1 rounded-xl bg-red-600 text-xs font-bold text-white py-3 hover:bg-red-700 uppercase tracking-wider shadow-lg shadow-red-200 dark:shadow-none transition-transform active:scale-95 disabled:opacity-50" onClick={handleReleaseConfirm}>{isProcessing ? 'Validando...' : 'Confirmar'}</button>
-                </div>
-            </div>
-          </div>
-      )}
-
-      {/* --- MODAL REUBICAR CON BUSCADOR INTELIGENTE --- */}
-      {relocateProperty && !isAuditor && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
-            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 border border-slate-200 dark:border-slate-700 flex flex-col max-h-[90vh]">
-                
-                <div className="bg-indigo-600 px-6 py-4 flex justify-between items-center shrink-0">
-                    <div className="flex items-center gap-3"><ArrowRightLeft className="w-5 h-5 text-white" /><h3 className="text-sm font-black text-white uppercase tracking-widest">Reubicar Cliente</h3></div>
-                    <button onClick={() => {setRelocateProperty(null); setActionNotes(''); setRelocateTargetId(''); setRelocateSearchTerm(''); setRelocateFileUrl(null);}} className="text-white/70 hover:text-white"><X className="w-5 h-5" /></button>
-                </div>
-                
-                <div className="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1">
-                    
-                    <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50">
-                        <div className="flex justify-between items-start">
-                            <div>
-                                <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Cliente actual</p>
-                                <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{relocateProperty.nombreComprador}</p>
-                                <p className="text-xs text-slate-500 mt-1">Liberará: {relocateProperty.desarrollo} - {relocateProperty.modelo}</p>
-                            </div>
-                            <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-widest ${relocateProperty.estado === 'VENDIDO' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
-                                {relocateProperty.estado}
-                            </span>
-                        </div>
-                    </div>
-
-                    <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-700">
-                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Nueva Propiedad Destino</label>
-                        {selectedTargetProp ? (
-                            <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-xl border border-emerald-200 dark:border-emerald-800/50 flex justify-between items-center animate-in fade-in">
-                                <div>
-                                    <p className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-1">Destino Seleccionado</p>
-                                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{selectedTargetProp.desarrollo} - {selectedTargetProp.modelo}</p>
-                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mt-1">
-                                        Nivel: {selectedTargetProp.nivel} | Cond: {selectedTargetProp.condomino || '-'} | Edif: {selectedTargetProp.edificio || '-'} | Int: {selectedTargetProp.numeroInterior || '-'}
-                                    </p>
-                                    <p className="text-xs font-black text-emerald-700 dark:text-emerald-300 mt-1">{formatCurrency(selectedTargetProp.precioFinal)}</p>
-                                </div>
-                                <button onClick={() => setRelocateTargetId('')} className="p-2 text-slate-400 hover:text-red-500 transition-colors" title="Cambiar destino"><X className="w-5 h-5"/></button>
-                            </div>
-                        ) : (
-                            <div className="space-y-3">
-                                <div className="relative">
-                                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                                    <input type="text" placeholder="Buscar por Modelo, Edificio, ID..." className="w-full pl-9 pr-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white" value={relocateSearchTerm} onChange={e => setRelocateSearchTerm(e.target.value)} />
-                                </div>
-                                <div className="max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 custom-scrollbar shadow-inner">
-                                    {filteredRelocateTargets.length === 0 ? (
-                                        <div className="p-4 text-center text-xs text-slate-500">No se encontraron unidades disponibles.</div>
-                                    ) : (
-                                        filteredRelocateTargets.map(p => (
-                                            <div key={p.idPropiedad} onClick={() => setRelocateTargetId(p.idPropiedad)} className="p-3 border-b border-slate-100 dark:border-slate-700/50 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 cursor-pointer transition-colors">
-                                                <div className="flex justify-between items-start">
-                                                    <div>
-                                                        <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{p.desarrollo} - {p.modelo}</p>
-                                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mt-0.5">
-                                                            Nivel: {p.nivel} | Cond: {p.condomino || '-'} | Edif: {p.edificio || '-'} | Int: {p.numeroInterior || '-'}
-                                                        </p>
-                                                    </div>
-                                                    <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">{formatCurrency(p.precioFinal)}</p>
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Motivo / Notas</label>
-                        <textarea className="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-medium uppercase" rows={2} value={actionNotes} onChange={(e) => setActionNotes(e.target.value.toUpperCase())} />
-                    </div>
-
-                    {relocateProperty.estado === 'VENDIDO' && (
-                        <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
-                            <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-xl border border-purple-200 dark:border-purple-800/50">
-                                <label className="block text-[10px] font-black text-purple-700 dark:text-purple-400 uppercase tracking-wider mb-2">
-                                    <AlertTriangle className="inline w-3.5 h-3.5 mr-1 -mt-0.5" /> Solicitud Firmada (Obligatorio por Estatus VENDIDO)
-                                </label>
-                                {relocateFileUrl ? (
-                                    <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-2.5 rounded-lg border border-purple-100 dark:border-slate-600">
-                                        <span className="text-xs font-bold text-emerald-600 flex items-center"><CheckCircle2 className="w-4 h-4 mr-1"/> Documento Listo</span>
-                                        <button onClick={() => setRelocateFileUrl(null)} className="text-xs font-black text-red-500">Quitar</button>
-                                    </div>
-                                ) : (
-                                    <div className="relative flex items-center justify-center w-full h-11 border-2 border-dashed border-purple-300 dark:border-purple-600 rounded-lg bg-white dark:bg-slate-800 cursor-pointer hover:bg-purple-50 transition-colors">
-                                        {isUploadingRelocateFile ? <span className="text-xs font-bold text-purple-500 animate-pulse">Subiendo...</span> : <><UploadCloud className="w-4 h-4 text-purple-500 mr-2"/><span className="text-xs font-bold text-purple-700 dark:text-purple-400">Adjuntar PDF Firmado</span><input type="file" accept=".pdf,image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={handleRelocateFileUpload} disabled={isUploadingRelocateFile} /></>}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                </div>
-                
-                <div className="bg-slate-50 dark:bg-slate-900/50 p-4 flex justify-end gap-3 border-t border-slate-200 dark:border-slate-700 shrink-0">
-                    <button disabled={isProcessing} onClick={() => {setRelocateProperty(null); setActionNotes(''); setRelocateTargetId(''); setRelocateSearchTerm(''); setRelocateFileUrl(null);}} className="px-5 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors uppercase tracking-wider">Cancelar</button>
-                    <button disabled={!relocateTargetId || isProcessing || (relocateProperty.estado === 'VENDIDO' && !relocateFileUrl)} onClick={handleRelocateConfirm} className="px-6 py-2.5 bg-indigo-600 text-white text-xs font-bold uppercase tracking-wider rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none hover:bg-indigo-700 flex items-center gap-2 transition-transform active:scale-95 disabled:opacity-50 disabled:active:scale-100">
-                        {relocateProperty.estado === 'VENDIDO' ? <><ShieldAlert className="w-4 h-4"/> Solicitar Aprob.</> : <><ArrowRightLeft className="w-4 h-4"/> Reubicar</>}
-                    </button>
                 </div>
             </div>
           </div>

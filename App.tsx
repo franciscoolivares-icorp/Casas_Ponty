@@ -30,21 +30,39 @@ function App() {
   
   // --- ESTADOS PARA NOTIFICACIONES ---
   const [showNotifications, setShowNotifications] = useState(false);
-  const [usuariosDB, setUsuariosDB] = useState<any[]>([]); // Para obtener los correos de los asesores
+  const [usuariosDB, setUsuariosDB] = useState<any[]>([]); 
   const [isSendingAlert, setIsSendingAlert] = useState<string | null>(null);
+
+  // --- ROLES DERIVADOS ---
+  const isSuperAdmin = currentUser?.tipo_usuario === 'ADMINISTRADOR' || currentUser?.es_admin;
+  const isCoordinador = currentUser?.tipo_usuario === 'COORDINADOR';
+  const isAuditor = currentUser?.tipo_usuario === 'AUDITOR';
+  const isAsesor = currentUser?.tipo_usuario === 'ASESOR';
+  const isCarga = currentUser?.tipo_usuario === 'CARGA';
 
   useEffect(() => {
     const savedUser = localStorage.getItem('ponty_session');
     if (savedUser) {
-      setCurrentUser(JSON.parse(savedUser));
+      const user = JSON.parse(savedUser);
+      setCurrentUser(user);
       setIsAuthenticated(true);
-    }
-  }, []);
 
-  useEffect(() => {
-    const hash = window.location.hash.replace('#', '') as any;
-    const validTabs = ['home', 'schema', 'list', 'form', 'config', 'test', 'reporter', 'usuarios'];
-    if (validTabs.includes(hash)) setActiveTab(hash);
+      const hash = window.location.hash.replace('#', '');
+      const validTabs = ['home', 'schema', 'list', 'form', 'config', 'test', 'reporter', 'usuarios'];
+      
+      // REDIRECCIÓN INTELIGENTE DE PESTAÑA INICIAL POR ROL
+      if (hash && validTabs.includes(hash)) {
+          setActiveTab(hash as any);
+      } else {
+          if (user.tipo_usuario === 'ASESOR') {
+              setActiveTab('test');
+          } else if (user.tipo_usuario === 'CARGA') {
+              setActiveTab('list');
+          } else {
+              setActiveTab('home');
+          }
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -205,7 +223,6 @@ function App() {
     }
   };
 
-  // --- ACTUALIZADO: AUDITORÍA EXTENDIDA Y FILTRO DE CORREOS ACTIVADO CON PLANTILLA UNIVERSAL ---
   const handleUpdateProperty = async (updatedProperty: Partial<Propiedad>) => {
     const { idPropiedad, ...restOfData } = updatedProperty;
     const oldProp = properties.find(p => p.idPropiedad === idPropiedad);
@@ -215,7 +232,7 @@ function App() {
       alert('Error al actualizar: ' + error.message);
     } else { 
       if (oldProp) {
-        // 1. Auditoría Extendida de Campos Clave
+        // Auditoría Extendida
         const camposAuditar = [
           { key: 'titulacion', label: 'Titulación' },
           { key: 'fechaDesde', label: 'Fecha Desde' },
@@ -238,11 +255,9 @@ function App() {
             }
         }
 
-        // 2. Registro Tradicional de Estado
         if (oldProp.estado !== updatedProperty.estado && updatedProperty.estado) {
            await logMovimiento(idPropiedad as string, 'CAMBIO DE ESTATUS', `Pasó de ${oldProp.estado || 'N/A'} a ${updatedProperty.estado}`);
            
-           // 3. REGLA DE NEGOCIO: Enviar correo de cambio de estado SOLO si hay asesor vinculado
            const asesorActual = updatedProperty.asesor || oldProp.asesor;
            
            if (asesorActual && asesorActual.trim() !== '') {
@@ -267,7 +282,6 @@ function App() {
            }
         }
         
-        // 4. Registro de Cambio de Precio
         if (oldProp.precioFinal !== updatedProperty.precioFinal && updatedProperty.precioFinal !== undefined) {
            await logMovimiento(idPropiedad as string, 'CAMBIO DE PRECIO', `Pasó de $${oldProp.precioFinal || 0} a $${updatedProperty.precioFinal}`);
         }
@@ -312,12 +326,27 @@ function App() {
   };
 
   if (!isAuthenticated) {
-    return <Login onLoginSuccess={(user) => { setCurrentUser(user); setIsAuthenticated(true); localStorage.setItem('ponty_session', JSON.stringify(user)); }} />;
+    return <Login onLoginSuccess={(user) => { 
+      setCurrentUser(user); 
+      setIsAuthenticated(true); 
+      localStorage.setItem('ponty_session', JSON.stringify(user)); 
+      
+      // Aplicar redirección según el rol tras loguearse
+      if (user.tipo_usuario === 'ASESOR') {
+          setActiveTab('test');
+          window.location.hash = 'test';
+      } else if (user.tipo_usuario === 'CARGA') {
+          setActiveTab('list');
+          window.location.hash = 'list';
+      } else {
+          setActiveTab('home');
+          window.location.hash = 'home';
+      }
+    }} />;
   }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300 flex flex-col font-sans">
-      {/* ... nav ... */}
       <nav className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm sticky top-0 z-[60] transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
@@ -328,21 +357,32 @@ function App() {
               </button>
               
               <div className="flex space-x-6 min-w-max">
-                <button onClick={() => setActiveTab('home')} className={`${activeTab === 'home' ? 'border-indigo-500 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-700'} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold transition-colors`}>
-                  <HomeIcon className="w-4 h-4 mr-2" /> <span className="hidden md:inline">Inicio</span>
-                </button>
+                
+                {/* REGLA DE VISIBILIDAD DE MENÚS POR ROL */}
+                {!isCarga && (
+                  <button onClick={() => setActiveTab('home')} className={`${activeTab === 'home' ? 'border-indigo-500 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-700'} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold transition-colors`}>
+                    <HomeIcon className="w-4 h-4 mr-2" /> <span className="hidden md:inline">Inicio</span>
+                  </button>
+                )}
+
                 <button onClick={() => setActiveTab('list')} className={`${activeTab === 'list' ? 'border-indigo-500 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-700'} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold transition-colors`}>
                   <List className="w-4 h-4 mr-2" /> <span className="hidden md:inline">Inventario</span>
                 </button>
-                <button onClick={() => setActiveTab('test')} className={`${activeTab === 'test' ? 'border-indigo-500 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-700'} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold transition-colors`}>
-                  <FlaskConical className="w-4 h-4 mr-2" /> <span className="hidden md:inline">Apartar</span>
-                </button>
                 
-                {currentUser?.es_admin && (
+                {!isCarga && (
+                  <button onClick={() => setActiveTab('test')} className={`${activeTab === 'test' ? 'border-indigo-500 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-700'} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold transition-colors`}>
+                    <FlaskConical className="w-4 h-4 mr-2" /> <span className="hidden md:inline">Apartar</span>
+                  </button>
+                )}
+                
+                {(isSuperAdmin || isCoordinador || isAuditor) && (
+                  <button onClick={() => setActiveTab('reporter')} className={`${activeTab === 'reporter' ? 'border-indigo-500 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-700'} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold transition-colors`}>
+                    <PieChart className="w-4 h-4 mr-2" /> <span className="hidden md:inline">Reportes</span>
+                  </button>
+                )}
+
+                {isSuperAdmin && (
                   <>
-                    <button onClick={() => setActiveTab('reporter')} className={`${activeTab === 'reporter' ? 'border-indigo-500 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-700'} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold transition-colors`}>
-                      <PieChart className="w-4 h-4 mr-2" /> <span className="hidden md:inline">Reportes</span>
-                    </button>
                     <button onClick={() => { setEditingProperty(undefined); setIsViewing(false); setActiveTab('form'); }} className={`${activeTab === 'form' ? 'border-indigo-500 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-700'} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold transition-colors`}>
                       <PlusCircle className="w-4 h-4 mr-2" /> <span className="hidden md:inline">Nuevo</span>
                     </button>
@@ -424,7 +464,7 @@ function App() {
 
       <div className="py-6 flex-1 overflow-auto">
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full">
-            {activeTab === 'home' && <Home properties={properties} />}
+            {activeTab === 'home' && <Home properties={properties} onNavigateToApartados={() => setActiveTab('test')} />}
             {activeTab === 'usuarios' && <Usuarios />}
             
             {activeTab === 'list' && (

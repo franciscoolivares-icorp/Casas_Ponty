@@ -6,7 +6,7 @@ import {
   Edit2, Trash2, Search, Filter, X, Settings, Check, 
   ChevronLeft, ChevronRight, Edit3, GripVertical, AlertCircle, 
   Layers, Upload, Clock, User, Eye, Download, FileSpreadsheet, Plus,
-  ArrowUp, ArrowDown
+  ArrowUp, ArrowDown, Eraser
 } from 'lucide-react';
 
 interface PropertyListProps {
@@ -23,7 +23,6 @@ interface PropertyListProps {
 
 interface ColumnConfig { id: string; label: string; visible: boolean; }
 
-// --- COLUMNAS ACTUALIZADAS CON LOS NUEVOS CAMPOS (OBS. DIRECCIÓN Y FECHA RESOLUCIÓN) ---
 const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'desarrollo', label: 'Desarrollo', visible: true },
   { id: 'modelo', label: 'Modelo', visible: true },
@@ -128,8 +127,13 @@ export const PropertyList: React.FC<PropertyListProps> = ({
   const STORAGE_KEY_COLS = 'propertyMaster_columnConfig_v5';
 
   const esCoordinador = currentUser?.tipo_usuario === 'COORDINADOR';
+  const esAuditor = currentUser?.tipo_usuario === 'AUDITOR';
+  const esCarga = currentUser?.tipo_usuario === 'CARGA';
   const desarrollosAsignados = currentUser?.desarrollos_asignados || [];
+  
   const canEdit = isAdmin || esCoordinador;
+  const canImport = isAdmin || esCarga;
+  const canExport = isAdmin || esCoordinador || esAuditor || esCarga;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -162,7 +166,6 @@ export const PropertyList: React.FC<PropertyListProps> = ({
     if (s2) setFilterSlot2Name(JSON.parse(s2).name || 'Cargar 2');
   };
 
-  // --- SE AGREGARON LOS CAMPOS NUEVOS A LA PLANTILLA DE EXCEL ---
   const downloadTemplate = () => {
     const templateData = [{
       idPropiedad: '', desarrollo: '', modelo: '', modeloAgrupador: '', nivel: '', estado: 'DISPONIBLE',
@@ -187,6 +190,21 @@ export const PropertyList: React.FC<PropertyListProps> = ({
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Inventario_Exportado");
     XLSX.writeFile(wb, `Inventario_Ponty_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const handleClearTitulacion = async () => {
+      if (!window.confirm('¿Estás seguro de que deseas vaciar TODOS los registros de "Titulación" y "Fecha Desde"? Esta acción no se puede deshacer.')) return;
+      
+      setIsUploading(true);
+      try {
+          const { error } = await supabase.from('propiedades').update({ titulacion: null, fechaDesde: null }).neq('idPropiedad', 'dummy-condition-to-update-all');
+          if (error) throw error;
+          alert('Se han vaciado los registros correctamente. Por favor recargue la página para visualizar los cambios.');
+      } catch (err: any) {
+          alert('Error al limpiar registros: ' + err.message);
+      } finally {
+          setIsUploading(false);
+      }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -218,54 +236,20 @@ export const PropertyList: React.FC<PropertyListProps> = ({
             const currentId = row.idPropiedad ? String(row.idPropiedad).trim() : '';
 
             if (currentId) {
-                // --- SE AGREGARON LOS CAMPOS NUEVOS AL MAPEO DEL EXCEL ---
-                const formattedRow = {
-                  idPropiedad: currentId,
-                  desarrollo: row.desarrollo || null,
-                  nivel: row.nivel || null,
-                  modelo: row.modelo || null,
-                  modeloAgrupador: row.modeloAgrupador || null,
-                  estado: row.estado || 'DISPONIBLE',
-                  estadoAgrupador: row.estadoAgrupador || null,
-                  precioLista: Number(row.precioLista) || 0,
-                  descuento: Number(row.descuento) || 0,
-                  precioFinal: Number(row.precioFinal) || 0,
-                  precioOperacion: Number(row.precioOperacion) || 0,
-                  m2TerrExc: Number(row.m2TerrExc) || 0,
-                  precioXM2Exc: Number(row.precioXM2Exc) || 0,
-                  precioTerrExc: Number(row.precioTerrExc) || 0,
-                  precioObrasAdicionales: Number(row.precioObrasAdicionales) || 0,
-                  dtuAvaluo: row.dtuAvaluo || 'SIN DTU',
-                  valorAvaluo: Number(row.valorAvaluo) || 0,
-                  metodoCompra: row.metodoCompra || null,
-                  metodoCompraAgrupador: row.metodoCompraAgrupador || null,
-                  tipoUsuario: row.tipoUsuario || null,
-                  asesorExterno: String(row.asesorExterno).toLowerCase() === 'true' || row.asesorExterno === 1,
-                  calle: row.calle || null,
-                  manzana: row.manzana || null,
-                  lote: row.lote || null,
-                  condomino: row.condomino || null,
-                  edificio: row.edificio || null,
-                  numeroExterior: row.numeroExterior || null,
-                  numeroInterior: row.numeroInterior || null,
-                  diasAutorizadosApartado: Number(row.diasAutorizadosApartado) || 7,
-                  nombreComprador: row.nombreComprador || null,
-                  ek: row.ek || null,
-                  asesor: row.asesor || null,
-                  banco: row.banco || null,
-                  fechaApartado: parseExcelDate(row.fechaApartado),
-                  fechaVenta: parseExcelDate(row.fechaVenta),
-                  fechaEscritura: parseExcelDate(row.fechaEscritura),
-                  fechaDesde: parseExcelDate(row.fechaDesde),
-                  fechaResolucion: parseExcelDate(row.fechaResolucion),
-                  titulacion: row.titulacion || null,
-                  retroAsesor: row.retroAsesor || null,
-                  observaciones: row.observaciones || null,
-                  observacionesDireccion: row.observacionesDireccion || null,
-                  nombreBrokerBanco: row.nombreBrokerBanco || null,
-                  telefonoBrokerBanco: row.telefonoBrokerBanco || null,
-                  correoBrokerBanco: row.correoBrokerBanco || null
-                };
+                const formattedRow: any = { idPropiedad: currentId };
+                
+                Object.keys(row).forEach(key => {
+                    if (['fechaApartado', 'fechaVenta', 'fechaEscritura', 'fechaDesde', 'fechaResolucion'].includes(key)) {
+                        formattedRow[key] = parseExcelDate(row[key]);
+                    } else if (['precioLista', 'descuento', 'precioFinal', 'precioOperacion', 'm2TerrExc', 'precioXM2Exc', 'precioTerrExc', 'precioObrasAdicionales', 'valorAvaluo', 'diasAutorizadosApartado'].includes(key)) {
+                        formattedRow[key] = Number(row[key]) || 0;
+                    } else if (key === 'asesorExterno') {
+                        formattedRow[key] = String(row[key]).toLowerCase() === 'true' || row[key] === 1;
+                    } else {
+                        formattedRow[key] = row[key];
+                    }
+                });
+
                 propertiesMap.set(currentId, formattedRow);
             }
         });
@@ -378,7 +362,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
     
     if (rule.field === 'diasRezago') {
        const dApartado = getDiffDays(prop.fechaApartado);
-       propVal = prop.fechaApartado ? (dApartado ?? 0) - (prop.diasAutorizadosApartado || 0) : null;
+       propVal = prop.fechaApartado ? Math.max(0, (dApartado ?? 0) - (prop.diasAutorizadosApartado || 0)) : null;
     } else if (rule.field === 'diasDesdeRevisar') {
        propVal = prop.fechaDesde ? (getDiffDays(prop.fechaDesde) || 0) + 1 : null;
     }
@@ -435,8 +419,8 @@ export const PropertyList: React.FC<PropertyListProps> = ({
             let bVal = b[sortConfig.key as keyof Propiedad];
             
             if (sortConfig.key === 'diasRezago') {
-               aVal = a.fechaApartado ? (getDiffDays(a.fechaApartado) ?? 0) - (a.diasAutorizadosApartado || 0) : -999;
-               bVal = b.fechaApartado ? (getDiffDays(b.fechaApartado) ?? 0) - (b.diasAutorizadosApartado || 0) : -999;
+               aVal = a.fechaApartado ? Math.max(0, (getDiffDays(a.fechaApartado) ?? 0) - (a.diasAutorizadosApartado || 0)) : -999;
+               bVal = b.fechaApartado ? Math.max(0, (getDiffDays(b.fechaApartado) ?? 0) - (b.diasAutorizadosApartado || 0)) : -999;
             } else if (sortConfig.key === 'diasDesdeRevisar') {
                aVal = a.fechaDesde ? (getDiffDays(a.fechaDesde) || 0) + 1 : -999;
                bVal = b.fechaDesde ? (getDiffDays(b.fechaDesde) || 0) + 1 : -999;
@@ -472,6 +456,9 @@ export const PropertyList: React.FC<PropertyListProps> = ({
     if (colId === 'asesorExterno') {
         return val ? 'SÍ' : 'NO';
     }
+    if (colId === 'diasRezago' && Number(val) <= 0) {
+        return <span className="text-slate-400 dark:text-slate-500">-</span>;
+    }
     if (colId === 'estado') {
         let colorClass = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
         if (val === 'DISPONIBLE') colorClass = 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400';
@@ -486,7 +473,6 @@ export const PropertyList: React.FC<PropertyListProps> = ({
         if (val === 'CON DTU') colorClass = 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400';
         return <span className={`px-2.5 py-1 rounded-md font-bold text-xs ${colorClass}`}>{String(val)}</span>;
     }
-    // Formatear las fechas para que se vean más legibles
     if (['fechaApartado', 'fechaVenta', 'fechaEscritura', 'fechaDesde', 'fechaResolucion'].includes(colId)) {
         return <span className="font-medium text-slate-700 dark:text-slate-300">{String(val).split('T')[0]}</span>;
     }
@@ -519,9 +505,9 @@ export const PropertyList: React.FC<PropertyListProps> = ({
             <Filter className="w-4 h-4" /> Filtros Avanzados {activeFilters.length > 0 && `(${activeFilters.length})`}
           </button>
 
-          {isAdmin && <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-1 hidden lg:block"></div>}
+          {(canImport || canExport || esCarga) && <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-1 hidden lg:block"></div>}
           
-          {isAdmin && (
+          {canImport && (
             <>
               <button onClick={downloadTemplate} className="px-4 py-2.5 rounded-lg flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors" title="Descargar plantilla de Excel">
                 <Download className="w-4 h-4" /> Plantilla
@@ -531,11 +517,19 @@ export const PropertyList: React.FC<PropertyListProps> = ({
               <button disabled={isUploading} onClick={() => fileInputRef.current?.click()} className="px-4 py-2.5 rounded-lg flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50">
                 <Upload className="w-4 h-4" /> {isUploading ? 'Procesando...' : 'Importar'}
               </button>
+            </>
+          )}
 
+          {canExport && (
               <button onClick={exportToExcel} className="px-4 py-2.5 rounded-lg flex items-center gap-2 text-sm font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors">
                 <FileSpreadsheet className="w-4 h-4" /> Exportar BD
               </button>
-            </>
+          )}
+
+          {esCarga && (
+              <button onClick={handleClearTitulacion} disabled={isUploading} className="px-4 py-2.5 rounded-lg flex items-center gap-2 text-sm font-bold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors disabled:opacity-50">
+                <Eraser className="w-4 h-4" /> Vaciar Titulación y Fechas
+              </button>
           )}
 
           <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-1 hidden lg:block"></div>
@@ -661,7 +655,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
           <table className="w-full text-sm text-left">
             <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 z-10 shadow-sm">
               <tr>
-                {isAdmin && <th className="p-4 w-12 border-b border-slate-200 dark:border-slate-700"><input type="checkbox" onChange={handleSelectAll} checked={selectedIds.size === filteredProperties.length && filteredProperties.length > 0} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800" /></th>}
+                {canEdit && <th className="p-4 w-12 border-b border-slate-200 dark:border-slate-700"><input type="checkbox" onChange={handleSelectAll} checked={selectedIds.size === filteredProperties.length && filteredProperties.length > 0} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800" /></th>}
                 
                 {columns.filter(c => c.visible).map(col => (
                     <th 
@@ -683,13 +677,13 @@ export const PropertyList: React.FC<PropertyListProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
               {paginatedProperties.length === 0 ? (
-                  <tr><td colSpan={columns.filter(c => c.visible).length + (isAdmin ? 2 : 1)} className="p-12 text-center text-slate-500 dark:text-slate-400"><AlertCircle className="w-8 h-8 mx-auto mb-3 opacity-50" /><p className="text-lg font-medium">No se encontraron resultados</p></td></tr>
+                  <tr><td colSpan={columns.filter(c => c.visible).length + (canEdit ? 2 : 1)} className="p-12 text-center text-slate-500 dark:text-slate-400"><AlertCircle className="w-8 h-8 mx-auto mb-3 opacity-50" /><p className="text-lg font-medium">No se encontraron resultados</p></td></tr>
               ) : (
                 paginatedProperties.map(prop => (
                   <tr key={prop.idPropiedad} className={`transition-colors ${selectedIds.has(prop.idPropiedad) ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-700/60'}`}>
-                    {isAdmin && <td className="p-4"><input type="checkbox" checked={selectedIds.has(prop.idPropiedad)} onChange={(e) => { const next = new Set(selectedIds); e.target.checked ? next.add(prop.idPropiedad) : next.delete(prop.idPropiedad); setSelectedIds(next); }} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800" /></td>}
+                    {canEdit && <td className="p-4"><input type="checkbox" checked={selectedIds.has(prop.idPropiedad)} onChange={(e) => { const next = new Set(selectedIds); e.target.checked ? next.add(prop.idPropiedad) : next.delete(prop.idPropiedad); setSelectedIds(next); }} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800" /></td>}
                     {columns.filter(c => c.visible).map(col => <td key={col.id} className="p-4 whitespace-nowrap text-slate-700 dark:text-slate-300">{formatCell(
-                      col.id === 'diasRezago' ? (prop.fechaApartado ? (getDiffDays(prop.fechaApartado) ?? 0) - (prop.diasAutorizadosApartado || 0) : null) :
+                      col.id === 'diasRezago' ? (prop.fechaApartado ? Math.max(0, (getDiffDays(prop.fechaApartado) ?? 0) - (prop.diasAutorizadosApartado || 0)) : null) :
                       col.id === 'diasDesdeRevisar' ? (prop.fechaDesde ? (getDiffDays(prop.fechaDesde) || 0) + 1 : null) :
                       prop[col.id as keyof Propiedad], col.id
                     )}</td>)}
@@ -718,7 +712,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
         </div>
       </div>
 
-      {isAdmin && selectedIds.size > 0 && (
+      {canEdit && selectedIds.size > 0 && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-6 z-50 animate-in slide-in-from-bottom-10">
           <div className="flex flex-col"><span className="text-[10px] text-slate-400 uppercase font-black tracking-widest">Acción Masiva</span><span className="text-sm font-bold">{selectedIds.size} registros</span></div>
           <div className="h-8 w-px bg-slate-700 dark:bg-slate-200 mx-2"></div>
@@ -727,7 +721,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
         </div>
       )}
 
-      {isAdmin && isBulkEditOpen && (
+      {canEdit && isBulkEditOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
           <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl w-full max-w-md shadow-2xl border border-slate-200 dark:border-slate-700 transition-colors flex flex-col">
             <div className="flex justify-between items-center mb-6">
