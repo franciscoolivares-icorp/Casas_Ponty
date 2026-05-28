@@ -17,7 +17,8 @@ export const CatalogManager: React.FC<CatalogManagerProps> = ({ onCatalogChanged
     { key: 'banco', label: 'Bancos' },
     { key: 'metodoCompra', label: 'Métodos de Compra' },
     { key: 'metodoCompraAgrupador', label: 'Mét. Compra Agrupadores' },
-    { key: 'tipoUsuario', label: 'Tipos de Usuario' }
+    { key: 'tipoUsuario', label: 'Tipos de Usuario' },
+    { key: 'correos_admin_ventas', label: 'Correos Admin Ventas' }
   ];
 
   const [selectedKey, setSelectedKey] = useState<string>(catalogOptions[0].key);

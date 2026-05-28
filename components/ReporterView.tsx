@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Propiedad } from '../types';
+import { Propiedad, PopupConfig } from '../types';
 import * as XLSX from 'xlsx';
 import { 
   PieChart, Download, Building2, 
@@ -10,9 +10,10 @@ import {
 interface ReporterViewProps {
   properties: Propiedad[];
   catalogs: { [key: string]: string[] };
+  showPopup: (config: PopupConfig) => void;
 }
 
-export const ReporterView: React.FC<ReporterViewProps> = ({ properties }) => {
+export const ReporterView: React.FC<ReporterViewProps> = ({ properties, showPopup }) => {
   // --- FILTROS ---
   const [selectedDesarrollo, setSelectedDesarrollo] = useState<string>('');
   const [selectedModelo, setSelectedModelo] = useState<string>('');
@@ -130,7 +131,8 @@ export const ReporterView: React.FC<ReporterViewProps> = ({ properties }) => {
 
   const exportToExcel = () => {
     if (filteredProperties.length === 0) {
-        alert("No hay datos para exportar."); return;
+        showPopup({ type: 'alert', variant: 'warning', title: 'Aviso', message: "No hay datos para exportar." }); 
+        return;
     }
     const dataToExport = filteredProperties.map(p => ({
         "ID Propiedad": p.idPropiedad,

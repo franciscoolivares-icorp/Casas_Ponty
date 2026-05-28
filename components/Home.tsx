@@ -4,20 +4,31 @@ import { Building2, Home as HomeIcon, CheckCircle2, AlertCircle, Clock, PieChart
 
 interface HomeProps {
   properties: Propiedad[];
+  currentUser?: any;
   onNavigateToApartados?: () => void;
 }
 
-export const Home: React.FC<HomeProps> = ({ properties, onNavigateToApartados }) => {
+export const Home: React.FC<HomeProps> = ({ properties, onNavigateToApartados, currentUser }) => {
   const [selectedDesarrollo, setSelectedDesarrollo] = useState<string>('');
 
+const isCoordinador = currentUser?.tipo_usuario === 'COORDINADOR';
+  const desarrollosAsignados = currentUser?.desarrollos_asignados || [];
+  
+  const propertiesWithAccess = useMemo(() => {
+    if (isCoordinador) {
+       return properties.filter(p => desarrollosAsignados.includes(p.desarrollo || ''));
+    }
+    return properties;
+  }, [properties, isCoordinador, desarrollosAsignados]);
+
   const desarrollosDisponibles = useMemo(() => {
-     return Array.from(new Set(properties.map(p => p.desarrollo).filter(Boolean))).sort();
-  }, [properties]);
+     return Array.from(new Set(propertiesWithAccess.map(p => p.desarrollo).filter(Boolean))).sort();
+  }, [propertiesWithAccess]);
 
   const filteredProperties = useMemo(() => {
-     if (!selectedDesarrollo) return properties;
-     return properties.filter(p => p.desarrollo === selectedDesarrollo);
-  }, [properties, selectedDesarrollo]);
+     if (!selectedDesarrollo) return propertiesWithAccess;
+     return propertiesWithAccess.filter(p => p.desarrollo === selectedDesarrollo);
+  }, [propertiesWithAccess, selectedDesarrollo]);
 
   const today = new Date();
   const getDiffDays = (dateStr?: string | null) => {

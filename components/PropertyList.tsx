@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Propiedad } from '../types';
+import { Propiedad, PopupConfig } from '../types';
 import * as XLSX from 'xlsx';
 import { 
   Edit2, Trash2, Search, Filter, X, Settings, Check, 
   ChevronLeft, ChevronRight, Edit3, GripVertical, AlertCircle, 
   Layers, Upload, Clock, User, Eye, Download, FileSpreadsheet, Plus,
-  ArrowUp, ArrowDown, Eraser
+  ArrowUp, ArrowDown, Eraser, ChevronDown
 } from 'lucide-react';
 
 interface PropertyListProps {
@@ -19,6 +19,7 @@ interface PropertyListProps {
   onBulkUpdate: (ids: string[], field: keyof Propiedad, value: any) => void;
   isAdmin: boolean;
   currentUser?: any; 
+  showPopup: (config: PopupConfig) => void;
 }
 
 interface ColumnConfig { id: string; label: string; visible: boolean; }
@@ -90,7 +91,7 @@ const normalizeText = (text: string) => (text || "").toString().toLowerCase().no
 interface FilterRule { id: string; field: string; operator: string; value: string; }
 
 export const PropertyList: React.FC<PropertyListProps> = ({ 
-  properties, catalogs, onEdit, onView, onDelete, onBulkImport, onBulkUpdate, isAdmin, currentUser 
+  properties, catalogs, onEdit, onView, onDelete, onBulkImport, onBulkUpdate, isAdmin, currentUser, showPopup 
 }) => {
   const configPanelRef = useRef<HTMLDivElement>(null);
   const dragColumnItem = useRef<number | null>(null);
@@ -110,8 +111,13 @@ export const PropertyList: React.FC<PropertyListProps> = ({
   const [newRuleOperator, setNewRuleOperator] = useState('equals');
   const [newRuleValue, setNewRuleValue] = useState('');
 
+  const [isRuleFieldOpen, setIsRuleFieldOpen] = useState(false);
+  const [ruleFieldSearch, setRuleFieldSearch] = useState('');
+  const ruleFieldRef = useRef<HTMLDivElement>(null);
+
   const [filterSlot1Name, setFilterSlot1Name] = useState('Cargar 1');
   const [filterSlot2Name, setFilterSlot2Name] = useState('Cargar 2');
+  const [filterSlot3Name, setFilterSlot3Name] = useState('Cargar 3');
 
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
 
@@ -127,18 +133,23 @@ export const PropertyList: React.FC<PropertyListProps> = ({
   const STORAGE_KEY_COLS = 'propertyMaster_columnConfig_v5';
 
   const esCoordinador = currentUser?.tipo_usuario === 'COORDINADOR';
+  const isCoordinador = currentUser?.tipo_usuario === 'COORDINADOR';
+  const esDataLoader = currentUser?.tipo_usuario === 'DATA LOADER';
   const esAuditor = currentUser?.tipo_usuario === 'AUDITOR';
   const esCarga = currentUser?.tipo_usuario === 'CARGA';
   const desarrollosAsignados = currentUser?.desarrollos_asignados || [];
   
   const canEdit = isAdmin || esCoordinador;
-  const canImport = isAdmin || esCarga;
+  const canImport = isAdmin || isCoordinador || esDataLoader || esCarga;
   const canExport = isAdmin || esCoordinador || esAuditor || esCarga;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (configPanelRef.current && !configPanelRef.current.contains(event.target as Node)) {
         setShowColumnConfig(false);
+      }
+      if (ruleFieldRef.current && !ruleFieldRef.current.contains(event.target as Node)) {
+        setIsRuleFieldOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -164,6 +175,8 @@ export const PropertyList: React.FC<PropertyListProps> = ({
     if (s1) setFilterSlot1Name(JSON.parse(s1).name || 'Cargar 1');
     const s2 = localStorage.getItem(`ponty_filter_set_v3_2`);
     if (s2) setFilterSlot2Name(JSON.parse(s2).name || 'Cargar 2');
+    const s3 = localStorage.getItem(`ponty_filter_set_v3_3`);
+    if (s3) setFilterSlot3Name(JSON.parse(s3).name || 'Cargar 3');
   };
 
   const downloadTemplate = () => {
@@ -185,26 +198,40 @@ export const PropertyList: React.FC<PropertyListProps> = ({
   };
 
   const exportToExcel = () => {
-    if (filteredProperties.length === 0) return alert('No hay datos para exportar.');
+    if (filteredProperties.length === 0) {
+      showPopup({ type: 'alert', variant: 'warning', title: 'Aviso', message: 'No hay datos para exportar.' });
+      return;
+    }
     const ws = XLSX.utils.json_to_sheet(filteredProperties);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Inventario_Exportado");
     XLSX.writeFile(wb, `Inventario_Ponty_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  const handleClearTitulacion = async () => {
-      if (!window.confirm('¿Estás seguro de que deseas vaciar TODOS los registros de "Titulación" y "Fecha Desde"? Esta acción no se puede deshacer.')) return;
-      
-      setIsUploading(true);
-      try {
-          const { error } = await supabase.from('propiedades').update({ titulacion: null, fechaDesde: null }).neq('idPropiedad', 'dummy-condition-to-update-all');
-          if (error) throw error;
-          alert('Se han vaciado los registros correctamente. Por favor recargue la página para visualizar los cambios.');
-      } catch (err: any) {
-          alert('Error al limpiar registros: ' + err.message);
-      } finally {
-          setIsUploading(false);
+  const handleClearDataLoader = async () => {
+    showPopup({
+      type: 'confirm',
+      variant: 'danger',
+      title: 'Vaciar Registros (Data Loader)',
+      message: '¿Estás seguro de que deseas vaciar TODOS los registros de "Titulación", "Fecha Desde", "DTU Avalúo" y "Valor Avalúo"? Esta acción no se puede deshacer.',
+      onConfirm: async () => {
+        setIsUploading(true);
+        try {
+            const { error } = await supabase.from('propiedades').update({ 
+              titulacion: null, 
+              fechaDesde: null,
+              dtuAvaluo: null,
+              valorAvaluo: null
+            }).neq('idPropiedad', 'dummy-condition-to-update-all');
+            if (error) throw error;
+            showPopup({ type: 'alert', variant: 'success', title: 'Éxito', message: 'Se han vaciado los registros correctamente.' });
+        } catch (err: any) {
+            showPopup({ type: 'alert', variant: 'danger', title: 'Error', message: 'Error al limpiar registros: ' + err.message });
+        } finally {
+            setIsUploading(false);
+        }
       }
+    });
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -258,8 +285,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
         onBulkImport(finalDataToUpload);
 
       } catch (error) { 
-        console.error("Error importando:", error);
-        alert('Error al procesar Excel. Verifique que el formato sea correcto.'); 
+        showPopup({ type: 'alert', variant: 'danger', title: 'Error de Formato', message: 'Error al procesar Excel. Verifique que el formato sea correcto.' });
       } finally {
         setIsUploading(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
@@ -273,8 +299,12 @@ export const PropertyList: React.FC<PropertyListProps> = ({
   };
 
   const handleExecuteBulkUpdate = () => {
-    let finalValue: any = bulkEditValue.trim() === '' ? null : bulkEditValue;
+    if (bulkEditValue.trim() === '') {
+        showPopup({ type: 'alert', variant: 'warning', title: 'Aviso', message: 'Debes ingresar un valor válido para actualizar.' });
+        return;
+    }
     
+    let finalValue: any = bulkEditValue;
     const fieldType = BULK_EDITABLE_FIELDS.find(f => f.key === bulkEditField)?.type;
     if (finalValue !== null && (fieldType === 'number' || fieldType === 'currency')) {
         finalValue = Number(finalValue);
@@ -293,7 +323,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
       const { data, error } = await supabase.from('bitacora_movimientos').select('*').eq('idPropiedad', idPropiedad).order('created_at', { ascending: false });
       if (error) throw error;
       setHistoryData(data || []);
-    } catch (err: any) { alert("Error al cargar historial: " + err.message); } finally { setIsLoadingHistory(false); }
+    } catch (err: any) { showPopup({ type: 'alert', variant: 'danger', title: 'Error', message: "Error al cargar historial: " + err.message }); } finally { setIsLoadingHistory(false); }
   };
 
   const getOptionsForField = (field: string) => {
@@ -328,14 +358,14 @@ export const PropertyList: React.FC<PropertyListProps> = ({
   const clearFilters = () => { setActiveFilters([]); setSearchTerm(''); setCurrentPage(1); };
 
   const saveFilterSet = (slot: number) => {
-    const defaultName = slot === 1 ? filterSlot1Name : filterSlot2Name;
+    const defaultName = slot === 1 ? filterSlot1Name : slot === 2 ? filterSlot2Name : filterSlot3Name;
     const name = prompt(`Ingrese un nombre para identificar este filtro:`, defaultName);
     if (!name) return; 
 
     const filterData = { logic: filterLogic, filters: activeFilters, name: name };
     localStorage.setItem(`ponty_filter_set_v3_${slot}`, JSON.stringify(filterData));
     loadFilterNames();
-    alert(`Filtros guardados como "${name}"`);
+    showPopup({ type: 'alert', variant: 'success', title: 'Filtro Guardado', message: `Filtros guardados como "${name}"` });
   };
 
   const loadFilterSet = (slot: number) => {
@@ -346,7 +376,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
         setActiveFilters(parsed.filters || []);
         setCurrentPage(1);
     } else {
-        alert(`El slot ${slot} está vacío.`);
+        showPopup({ type: 'alert', variant: 'warning', title: 'Slot vacío', message: `El slot ${slot} está vacío.` });
     }
   };
 
@@ -367,10 +397,27 @@ export const PropertyList: React.FC<PropertyListProps> = ({
        propVal = prop.fechaDesde ? (getDiffDays(prop.fechaDesde) || 0) + 1 : null;
     }
 
-    const valStr = String(propVal ?? '').toLowerCase();
-    const targetStr = String(rule.value).toLowerCase();
+    let valStr = String(propVal ?? '').toLowerCase();
+    let targetStr = String(rule.value).toLowerCase();
     const numVal = Number(propVal);
     const numTarget = Number(rule.value);
+
+    // Si es un campo de fecha, formatear a YYYY-MM-DD para una comparación correcta
+    const DATE_FIELDS = ['fechaDesde', 'fechaResolucion', 'fechaApartado', 'fechaVenta', 'fechaEscritura'];
+    if (DATE_FIELDS.includes(rule.field)) {
+        valStr = valStr.substring(0, 10);
+        targetStr = targetStr.substring(0, 10);
+        
+        switch (rule.operator) {
+            case 'equals': return valStr === targetStr;
+            case 'not_equals': return valStr !== targetStr;
+            case 'greater_than': return valStr > targetStr;
+            case 'less_than': return valStr < targetStr;
+            case 'empty': return propVal === null || propVal === undefined || valStr === '';
+            case 'not_empty': return propVal !== null && propVal !== undefined && valStr !== '';
+            default: return true;
+        }
+    }
 
     switch (rule.operator) {
       case 'equals': return valStr === targetStr;
@@ -505,7 +552,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
             <Filter className="w-4 h-4" /> Filtros Avanzados {activeFilters.length > 0 && `(${activeFilters.length})`}
           </button>
 
-          {(canImport || canExport || esCarga) && <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-1 hidden lg:block"></div>}
+          {(canImport || canExport || esDataLoader) && <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-1 hidden lg:block"></div>}
           
           {canImport && (
             <>
@@ -526,9 +573,9 @@ export const PropertyList: React.FC<PropertyListProps> = ({
               </button>
           )}
 
-          {esCarga && (
-              <button onClick={handleClearTitulacion} disabled={isUploading} className="px-4 py-2.5 rounded-lg flex items-center gap-2 text-sm font-bold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors disabled:opacity-50">
-                <Eraser className="w-4 h-4" /> Vaciar Titulación y Fechas
+          {esDataLoader && (
+              <button onClick={handleClearDataLoader} disabled={isUploading} className="px-4 py-2.5 rounded-lg flex items-center gap-2 text-sm font-bold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors disabled:opacity-50">
+                <Eraser className="w-4 h-4" /> Vaciar Registros
               </button>
           )}
 
@@ -540,7 +587,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
               </button>
               
               {showColumnConfig && (
-                <div className="absolute right-0 top-12 w-72 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-50 p-3 animate-in slide-in-from-top-2">
+                <div className="absolute z-50 left-0 xl:left-auto xl:right-0 top-12 w-72 max-w-[calc(100vw-2rem)] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl p-3 animate-in slide-in-from-top-2">
                   <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-100 dark:border-slate-700"><p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Columnas Visibles</p><button onClick={() => setShowColumnConfig(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white"><X className="w-4 h-4"/></button></div>
                   <div className="max-h-[60vh] overflow-y-auto space-y-1 custom-scrollbar pr-1">
                     {columns.map((col, idx) => (
@@ -600,27 +647,76 @@ export const PropertyList: React.FC<PropertyListProps> = ({
                       <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 flex items-center whitespace-nowrap uppercase tracking-wider">
                           <Plus className="w-4 h-4 mr-1"/> Regla:
                       </span>
-                      <select className="border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg p-2.5 text-xs font-bold uppercase tracking-wider outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700 dark:text-slate-200" value={newRuleField} onChange={e => setNewRuleField(e.target.value)}>
-                          {DEFAULT_COLUMNS.map(col => <option key={col.id} value={col.id}>{col.label}</option>)}
-                      </select>
+                      <div className="relative" ref={ruleFieldRef}>
+                          <button 
+                              onClick={() => setIsRuleFieldOpen(!isRuleFieldOpen)}
+                              className="border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg p-2.5 text-xs font-bold uppercase tracking-wider outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700 dark:text-slate-200 min-w-[200px] max-w-[250px] text-left flex justify-between items-center truncate"
+                          >
+                              <span className="truncate">{DEFAULT_COLUMNS.find(c => c.id === newRuleField)?.label || 'SELECCIONAR...'}</span>
+                              <ChevronDown className="w-4 h-4 ml-2 flex-shrink-0" />
+                          </button>
+                          
+                          {isRuleFieldOpen && (
+                              <div className="absolute z-50 mt-2 w-full min-w-[250px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden animate-in fade-in">
+                                  <div className="p-2 border-b border-slate-100 dark:border-slate-700">
+                                      <div className="relative">
+                                          <Search className="absolute left-2.5 top-2 w-4 h-4 text-slate-400" />
+                                          <input 
+                                              autoFocus
+                                              type="text" 
+                                              placeholder="Buscar campo..." 
+                                              className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-slate-700 dark:text-slate-200"
+                                              value={ruleFieldSearch}
+                                              onChange={(e) => setRuleFieldSearch(e.target.value)}
+                                          />
+                                      </div>
+                                  </div>
+                                  <div className="max-h-60 overflow-y-auto p-1 custom-scrollbar">
+                                      {[...DEFAULT_COLUMNS]
+                                          .sort((a, b) => a.label.localeCompare(b.label))
+                                          .filter(col => col.label.toLowerCase().includes(ruleFieldSearch.toLowerCase()))
+                                          .map(col => (
+                                              <button 
+                                                  key={col.id}
+                                                  onClick={() => { setNewRuleField(col.id); setIsRuleFieldOpen(false); setRuleFieldSearch(''); }}
+                                                  className={`w-full text-left px-3 py-2 text-xs font-bold rounded-lg transition-colors ${newRuleField === col.id ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
+                                              >
+                                                  {col.label}
+                                              </button>
+                                          ))}
+                                  </div>
+                              </div>
+                          )}
+                      </div>
                       
-                      <select className="border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg p-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none" value={newRuleOperator} onChange={e => setNewRuleOperator(e.target.value)}>
-                          <option value="equals">Igual a (=)</option>
-                          <option value="not_equals">Diferente (!=)</option>
-                          <option value="contains">Contiene (*)</option>
-                          <option value="greater_than">Mayor que {'>'}</option>
-                          <option value="less_than">Menor que {'<'}</option>
-                          <option value="empty">Está vacío</option>
-                          <option value="not_empty">No está vacío</option>
-                      </select>
+                      {['fechaDesde', 'fechaResolucion', 'fechaApartado', 'fechaVenta', 'fechaEscritura'].includes(newRuleField) ? (
+                          <select className="border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg p-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none" value={newRuleOperator} onChange={e => setNewRuleOperator(e.target.value)}>
+                              <option value="equals">Día Exacto (o Hoy)</option>
+                              <option value="not_equals">Diferente de</option>
+                              <option value="greater_than">Después de {'>'}</option>
+                              <option value="less_than">Antes de {'<'}</option>
+                              <option value="empty">Está vacío</option>
+                              <option value="not_empty">No está vacío</option>
+                          </select>
+                      ) : (
+                          <select className="border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg p-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none" value={newRuleOperator} onChange={e => setNewRuleOperator(e.target.value)}>
+                              <option value="equals">Igual a (=)</option>
+                              <option value="not_equals">Diferente (!=)</option>
+                              <option value="contains">Contiene (*)</option>
+                              <option value="greater_than">Mayor que {'>'}</option>
+                              <option value="less_than">Menor que {'<'}</option>
+                              <option value="empty">Está vacío</option>
+                              <option value="not_empty">No está vacío</option>
+                          </select>
+                      )}
 
                       {newRuleOperator !== 'empty' && newRuleOperator !== 'not_empty' && (
                         <div className="relative">
                             <input 
-                              type="text" 
-                              list={`suggestions-${newRuleField}`} 
-                              className="border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg p-2.5 text-xs font-bold uppercase tracking-wider outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700 dark:text-slate-200 min-w-[200px]" 
-                              placeholder="Escriba o seleccione..." 
+                              type={['fechaDesde', 'fechaResolucion', 'fechaApartado', 'fechaVenta', 'fechaEscritura'].includes(newRuleField) ? 'date' : 'text'}
+                              list={`suggestions-${newRuleField}`}
+                              placeholder="Valor..." 
+                              className="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg p-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500"
                               value={newRuleValue} 
                               onChange={e => setNewRuleValue(e.target.value)}
                               onKeyDown={e => e.key === 'Enter' && handleAddRule()}
@@ -637,9 +733,11 @@ export const PropertyList: React.FC<PropertyListProps> = ({
                   <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center bg-slate-50 dark:bg-slate-900/50 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
                       <button onClick={() => loadFilterSet(1)} className="px-3 py-2 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-indigo-50 dark:hover:bg-slate-700 shadow-sm transition-colors">{filterSlot1Name}</button>
                       <button onClick={() => loadFilterSet(2)} className="px-3 py-2 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-indigo-50 dark:hover:bg-slate-700 shadow-sm transition-colors">{filterSlot2Name}</button>
+                      <button onClick={() => loadFilterSet(3)} className="px-3 py-2 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-indigo-50 dark:hover:bg-slate-700 shadow-sm transition-colors">{filterSlot3Name}</button>
                       <div className="w-px h-6 bg-slate-300 dark:bg-slate-700 mx-1"></div>
                       <button onClick={() => saveFilterSet(1)} className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-slate-50 dark:hover:bg-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 shadow-sm transition-colors">+ Guardar</button>
                       <button onClick={() => saveFilterSet(2)} className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-slate-50 dark:hover:bg-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 shadow-sm transition-colors">+ Guardar</button>
+                      <button onClick={() => saveFilterSet(3)} className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-slate-50 dark:hover:bg-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 shadow-sm transition-colors">+ Guardar</button>
                   </div>
               </div>
           </div>
@@ -746,7 +844,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
                           value={bulkEditValue} 
                           onChange={(e) => setBulkEditValue(e.target.value)}
                       >
-                          <option value="">(Dejar vacío para borrar)</option>
+                          <option value="">Selecciona un estado...</option>
                           {catalogs.estado?.map(e => <option key={e} value={e}>{e}</option>)}
                       </select>
                   ) : BULK_EDITABLE_FIELDS.find(f => f.key === bulkEditField)?.type === 'select_dtu' ? (
@@ -755,7 +853,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
                           value={bulkEditValue} 
                           onChange={(e) => setBulkEditValue(e.target.value)}
                       >
-                          <option value="">(Dejar vacío para borrar)</option>
+                          <option value="">Selecciona una opción...</option>
                           <option value="SIN DTU">SIN DTU</option>
                           <option value="CON DTU">CON DTU</option>
                           <option value="AVALUO CERRADO">AVALUO CERRADO</option>
@@ -764,7 +862,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
                       <input 
                         type={BULK_EDITABLE_FIELDS.find(f => f.key === bulkEditField)?.type === 'date' ? 'date' : 'text'}
                         className="w-full border border-slate-300 dark:border-slate-600 p-3 rounded-xl bg-white dark:bg-slate-700 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold uppercase" 
-                        placeholder="Valor (Deje vacío para borrar)..." 
+                        placeholder="Valor a actualizar..." 
                         value={bulkEditValue} 
                         onChange={(e) => setBulkEditValue(e.target.value.toUpperCase())}
                       />

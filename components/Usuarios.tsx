@@ -9,6 +9,8 @@ import {
   Download, Upload, Edit2
 } from 'lucide-react';
 
+import { PopupConfig } from '../types';
+
 interface Usuario {
   id: string;
   nombre: string;
@@ -21,7 +23,7 @@ interface Usuario {
   created_at: string;
 }
 
-export function Usuarios() {
+export function Usuarios({ showPopup }: { showPopup: (config: PopupConfig) => void }) {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [desarrollos, setDesarrollos] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,7 +39,7 @@ export function Usuarios() {
     nombre: '', correo: '', telefono: '', password: '', es_admin: false, tipo_usuario: 'ASESOR', desarrollos_asignados: [] as string[]
   });
 
-  const ROLES = ['ADMINISTRADOR', 'COORDINADOR', 'AUDITOR', 'ASESOR'];
+  const ROLES = ['ADMINISTRADOR', 'COORDINADOR', 'AUDITOR', 'ASESOR', 'DATA LOADER'];
 
   // Cargar datos
   const fetchData = async () => {
@@ -135,10 +137,8 @@ export function Usuarios() {
             }).eq('id', editingUserId);
 
             if (error) throw error;
-            alert(`Perfil de ${formData.nombre} actualizado con éxito.`);
-
+            showPopup({ type: 'alert', variant: 'success', title: 'Éxito', message: `Perfil de ${formData.nombre} actualizado con éxito.` });
         } else {
-            // MODO CREACIÓN
             const salt = bcrypt.genSaltSync(10);
             const passwordMaestra = "CasasPontyInventarioApp26";
             const hashedPassword = bcrypt.hashSync(passwordMaestra, salt);
@@ -157,13 +157,13 @@ export function Usuarios() {
 
             if (error) throw error;
             await sendWelcomeEmail(formData.correo.toLowerCase(), formData.nombre.toUpperCase(), formData.tipo_usuario, passwordMaestra);
-            alert(`Usuario creado con éxito.\nSe ha enviado un correo de bienvenida a ${formData.correo}.`);
+            showPopup({ type: 'alert', variant: 'success', title: 'Éxito', message: `Usuario creado con éxito.\nSe ha enviado un correo de bienvenida a ${formData.correo}.` });
         }
 
         setIsModalOpen(false);
         fetchData();
     } catch (error: any) {
-        alert('Error al guardar: ' + error.message);
+        showPopup({ type: 'alert', variant: 'danger', title: 'Error', message: 'Error al guardar: ' + error.message });
     } finally {
         setIsSubmitting(false);
     }
@@ -176,10 +176,18 @@ export function Usuarios() {
   };
 
   const deleteUser = async (id: string) => {
-    if (window.confirm('¿Eliminar permanentemente a este usuario?')) {
-      await supabase.from('usuarios').delete().eq('id', id);
-      fetchData();
-    }
+    showPopup({
+      type: 'confirm',
+      variant: 'danger',
+      title: 'Confirmar Eliminación',
+      message: '¿Eliminar permanentemente a este usuario?',
+      confirmText: 'Eliminar',
+      onConfirm: async () => {
+        const { error } = await supabase.from('usuarios').delete().eq('id', id);
+        if (!error) fetchData();
+        else showPopup({ type: 'alert', variant: 'danger', title: 'Error', message: 'Error al eliminar: ' + error.message });
+      }
+    });
   };
 
   // --- LÓGICA DE CARGA MASIVA Y PLANTILLA ---
@@ -211,7 +219,6 @@ export function Usuarios() {
         const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
         
         const usuariosAInsertar = [];
-        const correosAEnviar = [];
         const passwordMaestra = "CasasPontyInventarioApp26";
         const salt = bcrypt.genSaltSync(10);
         const hashedPassword = bcrypt.hashSync(passwordMaestra, salt);
@@ -220,7 +227,7 @@ export function Usuarios() {
             if (!row.Nombre_Completo || !row.Correo_Electronico || !row.Rol_Sistema) continue;
             
             const rol = String(row.Rol_Sistema).trim().toUpperCase();
-            if (!ROLES.includes(rol)) continue; // Ignorar si el rol está mal escrito
+            if (!ROLES.includes(rol)) continue;
 
             const isAdmin = rol === 'ADMINISTRADOR' ? true : (String(row.Es_Admin).trim().toUpperCase() === 'SI' || String(row.Es_Admin).trim().toUpperCase() === 'SÍ');
             
@@ -240,30 +247,17 @@ export function Usuarios() {
                 es_nuevo: true,
                 activo: true
             });
-
-            correosAEnviar.push({
-                email: String(row.Correo_Electronico).trim().toLowerCase(),
-                name: String(row.Nombre_Completo).trim().toUpperCase(),
-                role: rol
-            });
         }
 
         if (usuariosAInsertar.length === 0) throw new Error("No se encontraron usuarios válidos en el archivo.");
 
-        // 1. Insertar en base de datos
         const { error } = await supabase.from('usuarios').insert(usuariosAInsertar);
         if (error) throw error;
-
-        // 2. Disparar correos en segundo plano
-        alert(`¡Se importaron ${usuariosAInsertar.length} usuarios con éxito!\nEnviando correos de bienvenida en segundo plano...`);
         
-        for (const c of correosAEnviar) {
-            await sendWelcomeEmail(c.email, c.name, c.role, passwordMaestra);
-        }
-
+        showPopup({ type: 'alert', variant: 'success', title: 'Éxito', message: `¡Se importaron ${usuariosAInsertar.length} usuarios con éxito!` });
         fetchData();
       } catch (error: any) { 
-        alert('Error en la importación: ' + error.message); 
+        showPopup({ type: 'alert', variant: 'danger', title: 'Error', message: 'Error en la importación: ' + error.message }); 
       } finally {
         setIsUploading(false);
         if (fileInputRef.current) fileInputRef.current.value = '';

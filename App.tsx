@@ -2,8 +2,8 @@ import logoPonty from './Recursos/casas_ponty.png';
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from './supabaseClient';
 import emailjs from '@emailjs/browser';
-import { 
-  List, Settings, FlaskConical, PieChart, 
+import {
+  List, Settings, FlaskConical, PieChart,
   LogOut, Home as HomeIcon, PlusCircle, Users, Database,
   Bell, Mail, AlertTriangle
 } from 'lucide-react';
@@ -11,12 +11,12 @@ import { SchemaTable } from './components/SchemaTable';
 import { PropertyForm } from './components/PropertyForm';
 import { PropertyList } from './components/PropertyList';
 import { CatalogManager } from './components/CatalogManager';
-import { Apartados } from './components/Apartados'; 
+import { Apartados } from './components/Apartados';
 import { ReporterView } from './components/ReporterView';
 import Login from './components/Login';
 import { Home } from './components/Home';
-import { Usuarios } from './components/Usuarios'; 
-import { Propiedad } from './types';
+import { Usuarios } from './components/Usuarios';
+import { Propiedad, PopupConfig } from './types';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -27,18 +27,24 @@ function App() {
   const [isViewing, setIsViewing] = useState(false);
   const [properties, setProperties] = useState<Propiedad[]>([]);
   const [editingProperty, setEditingProperty] = useState<Propiedad | undefined>(undefined);
-  
+
   // --- ESTADOS PARA NOTIFICACIONES ---
   const [showNotifications, setShowNotifications] = useState(false);
-  const [usuariosDB, setUsuariosDB] = useState<any[]>([]); 
+  const [usuariosDB, setUsuariosDB] = useState<any[]>([]);
   const [isSendingAlert, setIsSendingAlert] = useState<string | null>(null);
+
+  // --- ESTADO GLOBAL DE POPUPS ---
+  const [popupConfig, setPopupConfig] = useState<PopupConfig | null>(null);
+
+  const showPopup = (config: PopupConfig) => setPopupConfig(config);
+  const closePopup = () => setPopupConfig(null);
 
   // --- ROLES DERIVADOS ---
   const isSuperAdmin = currentUser?.tipo_usuario === 'ADMINISTRADOR' || currentUser?.es_admin;
   const isCoordinador = currentUser?.tipo_usuario === 'COORDINADOR';
   const isAuditor = currentUser?.tipo_usuario === 'AUDITOR';
   const isAsesor = currentUser?.tipo_usuario === 'ASESOR';
-  const isCarga = currentUser?.tipo_usuario === 'CARGA';
+  const isDataLoader = currentUser?.tipo_usuario === 'DATA LOADER';
 
   useEffect(() => {
     const savedUser = localStorage.getItem('ponty_session');
@@ -49,18 +55,18 @@ function App() {
 
       const hash = window.location.hash.replace('#', '');
       const validTabs = ['home', 'schema', 'list', 'form', 'config', 'test', 'reporter', 'usuarios'];
-      
+
       // REDIRECCIÓN INTELIGENTE DE PESTAÑA INICIAL POR ROL
       if (hash && validTabs.includes(hash)) {
-          setActiveTab(hash as any);
+        setActiveTab(hash as any);
       } else {
-          if (user.tipo_usuario === 'ASESOR') {
-              setActiveTab('test');
-          } else if (user.tipo_usuario === 'CARGA') {
-              setActiveTab('list');
-          } else {
-              setActiveTab('home');
-          }
+        if (user.tipo_usuario === 'ASESOR') {
+          setActiveTab('test');
+        } else if (user.tipo_usuario === 'CARGA') {
+          setActiveTab('list');
+        } else {
+          setActiveTab('home');
+        }
       }
     }
   }, []);
@@ -75,7 +81,7 @@ function App() {
   }, [isDarkMode]);
 
   const [catalogs, setCatalogs] = useState<{ [key: string]: string[] }>({
-      elementosHabilitarBanco: ['BANCARIO', 'BANCARIO - APOYO INFO', 'COFINAVIT', 'INFO + BANCO', 'FOVISSSTE PARA TODOS', 'IVEQ']
+    elementosHabilitarBanco: ['BANCARIO', 'BANCARIO - APOYO INFO', 'COFINAVIT', 'INFO + BANCO', 'FOVISSSTE PARA TODOS', 'IVEQ']
   });
   const [modelAssignments, setModelAssignments] = useState<{ [group: string]: string[] }>({});
   const [statusAssignments, setStatusAssignments] = useState<{ [group: string]: string[] }>({});
@@ -94,7 +100,7 @@ function App() {
       const newCatalogs: { [key: string]: string[] } = {
         elementosHabilitarBanco: ['BANCARIO', 'BANCARIO - APOYO INFO', 'COFINAVIT', 'INFO + BANCO', 'FOVISSSTE PARA TODOS', 'IVEQ']
       };
-      
+
       catRes.data.forEach((item: any) => {
         if (!newCatalogs[item.tipo_catalogo]) newCatalogs[item.tipo_catalogo] = [];
         newCatalogs[item.tipo_catalogo].push(item.valor);
@@ -150,7 +156,7 @@ function App() {
     if (!currentUser) return [];
     const today = new Date();
     const isManager = currentUser.es_admin || currentUser.tipo_usuario === 'COORDINADOR';
-    
+
     const alertas: any[] = [];
 
     properties.forEach(p => {
@@ -176,12 +182,94 @@ function App() {
     return alertas.sort((a, b) => b.diasRezago - a.diasRezago);
   }, [properties, currentUser]);
 
+
+  const notifyStatusUpdate = async (prop: Propiedad, oldEstatus: string, newEstatus: string) => {
+    if (oldEstatus === newEstatus) return;
+    
+    // Helper para formatear
+    const formatMiles = (num: number | undefined) => num ? '$' + num.toLocaleString('en-US') : '$0';
+    
+    // 1. Notificación al Asesor
+    const asesor = usuariosDB.find(u => u.nombre === prop.asesor);
+    if (asesor && asesor.correo) {
+      const asuntoAsesor = `Actualización de Estatus: ${prop.nombreComprador || 'S/N'} ${prop.desarrollo || ''}`;
+      const mensajeAsesor = `Hola ${prop.asesor},
+
+Te notificamos que ha habido un cambio en el estatus de una de tus propiedades en proceso:
+
+Cliente: ${prop.nombreComprador || 'S/N'}
+Desarrollo: ${prop.desarrollo || ''}
+Modelo: ${prop.modelo || ''} ${prop.nivel || ''}
+Condominio: ${prop.condomino || ''}
+Edificio: ${prop.edificio || ''}
+Interior: ${prop.numeroInterior || ''}
+Precio: ${formatMiles(prop.precioFinal)}
+
+ID Propiedad: ${prop.idPropiedad}
+Estatus Anterior: ${oldEstatus}
+NUEVO ESTATUS: ${newEstatus}
+
+Por favor, revisa el sistema para más detalles.
+
+Saludos,`;
+      
+      try {
+        await emailjs.send('service_q6nzdzh', 'template_n4fo0xb', {
+          to_email: asesor.correo,
+          asunto: asuntoAsesor,
+          mensaje: mensajeAsesor
+        }, 'Wk9H8F1qHcLw1V9H3');
+        console.log("🛠️ Correo de estatus enviado al asesor:", asesor.correo);
+      } catch (err) { console.error("🚨 Error enviando correo al asesor", err); }
+    }
+
+    // 2. Notificación a Admin Ventas
+    if (newEstatus === 'VENDIDO' && prop.asesorExterno) {
+      try {
+        const { data: catalogData } = await supabase
+          .from('catalogos_maestro')
+          .select('valor')
+          .eq('tipo_catalogo', 'correos_admin_ventas');
+        
+        const correos = (catalogData || []).map(c => c.valor).filter(Boolean);
+        
+        if (correos.length > 0) {
+          const asuntoAdmin = `Venta con asesor externo: ${prop.nombreComprador || 'S/N'} ${prop.desarrollo || ''}`;
+          const mensajeAdmin = `Hola,
+
+Detallo la siguiente VENTA con asesor externo:
+
+Cliente: ${prop.nombreComprador || 'S/N'}
+EK: ${prop.ek || ''}
+Asesor: ${prop.asesor || ''}
+Desarrollo: ${prop.desarrollo || ''}
+Modelo: ${prop.modelo || ''} ${prop.nivel || ''}
+Condominio: ${prop.condomino || ''}
+Edificio: ${prop.edificio || ''}
+Interior: ${prop.numeroInterior || ''}
+
+Saludos,`;
+          
+          // Send to each email
+          for (const correo of correos) {
+            await emailjs.send('service_q6nzdzh', 'template_n4fo0xb', {
+              to_email: correo,
+              asunto: asuntoAdmin,
+              mensaje: mensajeAdmin
+            }, 'Wk9H8F1qHcLw1V9H3');
+            console.log("🛠️ Correo de admin ventas enviado a:", correo);
+          }
+        }
+      } catch (err) { console.error("🚨 Error procesando correos de admin ventas", err); }
+    }
+  };
+
   const handleSendAlertEmail = async (alerta: any) => {
     const prop = alerta.prop;
     const asesor = usuariosDB.find(u => u.nombre === prop.asesor);
-    
+
     if (!asesor || !asesor.correo) {
-      alert(`No se encontró el correo registrado para el asesor: ${prop.asesor}`);
+      showPopup({ type: 'alert', variant: 'warning', title: 'Aviso', message: `No se encontró el correo registrado para el asesor: ${prop.asesor}` });
       return;
     }
 
@@ -191,8 +279,8 @@ function App() {
       const mensajeGenerado = `Hola ${prop.asesor},\n\nTe notificamos que tu apartado ${prop.idPropiedad} en el desarrollo ${prop.desarrollo} (Modelo: ${prop.modelo}) presenta un rezago de ${alerta.diasRezago} días.\n\nPor favor, revisa el sistema lo antes posible.\n\nSaludos,\nEquipo Casas Ponty.`;
 
       await emailjs.send(
-        'service_q6nzdzh', 
-        'template_n4fo0xb', 
+        'service_q6nzdzh',
+        'template_n4fo0xb',
         {
           to_email: asesor.correo,
           asunto: asuntoGenerado,
@@ -200,10 +288,10 @@ function App() {
         },
         'Wk9H8F1qHcLw1V9H3'
       );
-      alert(`Aviso enviado exitosamente a ${asesor.correo}`);
-    } catch (err) {
-      console.error('Error enviando alerta:', err);
-      alert('Hubo un error enviando la alerta. Revisa la consola.');
+      showPopup({ type: 'alert', variant: 'success', title: 'Éxito', message: `Aviso enviado exitosamente a ${asesor.correo}` });
+    } catch (error) {
+      console.error(error);
+      showPopup({ type: 'alert', variant: 'danger', title: 'Error', message: 'Hubo un error enviando la alerta. Revisa la consola.' });
     } finally {
       setIsSendingAlert(null);
     }
@@ -216,23 +304,85 @@ function App() {
 
   const handleAddProperty = async (newProperty: Partial<Propiedad>) => {
     const { data, error } = await supabase.from('propiedades').insert([newProperty]).select();
-    if (error) alert('Error al guardar: ' + error.message);
-    else { 
+    if (error) showPopup({ type: 'alert', variant: 'danger', title: 'Error', message: 'Error al guardar: ' + error.message });
+    else {
       if (data && data[0]) await logMovimiento(data[0].idPropiedad, 'ALTA DE PROPIEDAD', `Propiedad agregada con estatus ${data[0].estado}`);
-      fetchProperties(); setActiveTab('list'); 
+      fetchProperties(); setActiveTab('list');
+    }
+  };
+
+
+  const handleUpdatePropertyInline = async (updatedProperty: Partial<Propiedad>) => {
+    console.log("🛠️ App.tsx: handleUpdatePropertyInline INICIADO", updatedProperty);
+    try {
+      const { idPropiedad, ...restOfData } = updatedProperty;
+      const oldProp = properties.find(p => p.idPropiedad === idPropiedad);
+      console.log("🛠️ App.tsx: Preparando envío INLINE a Supabase. ID:", idPropiedad, "Data:", restOfData);
+      
+      const { error, status, statusText } = await supabase.from('propiedades').update(restOfData).eq('idPropiedad', idPropiedad);
+      console.log("🛠️ App.tsx: Respuesta Supabase INLINE. Error:", error, "Status:", status, statusText);
+      
+      if (error) {
+      showPopup({ type: 'alert', variant: 'danger', title: 'Error', message: 'Error al actualizar campo: ' + error.message });
+    } else {
+
+      if (oldProp) {
+        if (restOfData.estado && oldProp.estado !== restOfData.estado) {
+           notifyStatusUpdate({ ...oldProp, ...restOfData } as Propiedad, oldProp.estado || '', restOfData.estado);
+        }
+
+        // Log changes
+        const camposAuditar = [
+          { key: 'titulacion', label: 'Titulación' },
+          { key: 'fechaDesde', label: 'Fecha Desde' },
+          { key: 'metodoCompra', label: 'Método de Compra' },
+          { key: 'dtuAvaluo', label: 'DTU/Avalúo' },
+          { key: 'nombreComprador', label: 'Titular' },
+          { key: 'fechaResolucion', label: 'Fecha de Resolución' },
+          { key: 'estado', label: 'Estado' }
+        ];
+
+        for (const campo of camposAuditar) {
+          const oldVal = String(oldProp[campo.key as keyof Propiedad] || '');
+          const newVal = String(updatedProperty[campo.key as keyof Propiedad] || '');
+
+          if (oldVal !== newVal && !(oldVal === '' && newVal === 'null') && newVal !== 'undefined') {
+            await logMovimiento(
+              idPropiedad as string,
+              `CAMBIO DE ${campo.label.toUpperCase()}`,
+              `Pasó de "${oldVal || 'N/A'}" a "${newVal || 'N/A'}"`
+            );
+          }
+        }
+      }
+      fetchProperties();
+      // Notice: NO setActiveTab('list') here!
+    }
+    } catch (err: any) {
+      console.error("🚨 ERROR JS en handleUpdatePropertyInline:", err);
+      showPopup({ type: 'alert', variant: 'danger', title: 'Error Crítico', message: 'Falla interna: ' + err.message });
     }
   };
 
   const handleUpdateProperty = async (updatedProperty: Partial<Propiedad>) => {
-    const { idPropiedad, ...restOfData } = updatedProperty;
-    const oldProp = properties.find(p => p.idPropiedad === idPropiedad);
-    
-    const { error } = await supabase.from('propiedades').update(restOfData).eq('idPropiedad', idPropiedad);
-    if (error) {
-      alert('Error al actualizar: ' + error.message);
-    } else { 
+    console.log("🛠️ App.tsx: handleUpdateProperty INICIADO", updatedProperty);
+    try {
+      const { idPropiedad, ...restOfData } = updatedProperty;
+      const oldProp = properties.find(p => p.idPropiedad === idPropiedad);
+      console.log("🛠️ App.tsx: Preparando envío a Supabase. ID:", idPropiedad, "Data:", restOfData);
+
+      const { error } = await supabase.from('propiedades').update(restOfData).eq('idPropiedad', idPropiedad);
+      console.log("🛠️ App.tsx: Respuesta Supabase. Error:", error);
+      
+      if (error) {
+        showPopup({ type: 'alert', variant: 'danger', title: 'Error', message: 'Error al actualizar: ' + error.message });
+      } else {
+
       if (oldProp) {
-        // Auditoría Extendida
+        if (restOfData.estado && oldProp.estado !== restOfData.estado) {
+           notifyStatusUpdate({ ...oldProp, ...restOfData } as Propiedad, oldProp.estado || '', restOfData.estado);
+        }
+
         const camposAuditar = [
           { key: 'titulacion', label: 'Titulación' },
           { key: 'fechaDesde', label: 'Fecha Desde' },
@@ -243,138 +393,166 @@ function App() {
         ];
 
         for (const campo of camposAuditar) {
-            const oldVal = String(oldProp[campo.key as keyof Propiedad] || '');
-            const newVal = String(updatedProperty[campo.key as keyof Propiedad] || '');
-            
-            if (oldVal !== newVal && !(oldVal === '' && newVal === 'null')) {
-               await logMovimiento(
-                 idPropiedad as string, 
-                 `CAMBIO DE ${campo.label.toUpperCase()}`, 
-                 `Pasó de "${oldVal || 'N/A'}" a "${newVal || 'N/A'}"`
-               );
-            }
+          const oldVal = String(oldProp[campo.key as keyof Propiedad] || '');
+          const newVal = String(updatedProperty[campo.key as keyof Propiedad] || '');
+
+          if (oldVal !== newVal && !(oldVal === '' && newVal === 'null')) {
+            await logMovimiento(
+              idPropiedad as string,
+              `CAMBIO DE ${campo.label.toUpperCase()}`,
+              `Pasó de "${oldVal || 'N/A'}" a "${newVal || 'N/A'}"`
+            );
+          }
         }
 
         if (oldProp.estado !== updatedProperty.estado && updatedProperty.estado) {
-           await logMovimiento(idPropiedad as string, 'CAMBIO DE ESTATUS', `Pasó de ${oldProp.estado || 'N/A'} a ${updatedProperty.estado}`);
-           
-           const asesorActual = updatedProperty.asesor || oldProp.asesor;
-           
-           if (asesorActual && asesorActual.trim() !== '') {
-              const asesorData = usuariosDB.find(u => u.nombre === asesorActual);
-              
-              if (asesorData && asesorData.correo) {
-                  const asuntoEstatus = `Actualización de Estatus: ${idPropiedad} - ${updatedProperty.desarrollo || oldProp.desarrollo}`;
-                  const mensajeEstatus = `Hola ${asesorActual},\n\nTe notificamos que ha habido un cambio en el estatus de una de tus propiedades en proceso:\n\nCliente: ${updatedProperty.nombreComprador || oldProp.nombreComprador || 'Sin Asignar'}\nDesarrollo: ${updatedProperty.desarrollo || oldProp.desarrollo} (${updatedProperty.modelo || oldProp.modelo})\nID Propiedad: ${idPropiedad}\n\nEstatus Anterior: ${oldProp.estado || 'N/A'}\nNUEVO ESTATUS: ${updatedProperty.estado}\n\nPor favor, revisa el sistema para más detalles.\n\nSaludos,\nEquipo Casas Ponty.`;
-
-                  emailjs.send(
-                      'service_q6nzdzh', 
-                      'template_n4fo0xb', 
-                      {
-                          to_email: asesorData.correo,
-                          asunto: asuntoEstatus,
-                          mensaje: mensajeEstatus
-                      },
-                      'Wk9H8F1qHcLw1V9H3' 
-                  ).then(() => console.log(`Notificación de estatus enviada a: ${asesorData.correo}`))
-                   .catch(err => console.error('Error al enviar correo de estatus:', err));
-              }
-           }
-        }
-        
-        if (oldProp.precioFinal !== updatedProperty.precioFinal && updatedProperty.precioFinal !== undefined) {
-           await logMovimiento(idPropiedad as string, 'CAMBIO DE PRECIO', `Pasó de $${oldProp.precioFinal || 0} a $${updatedProperty.precioFinal}`);
+          await logMovimiento(idPropiedad as string, 'CAMBIO DE ESTATUS', `Pasó de ${oldProp.estado || 'N/A'} a ${updatedProperty.estado}`);
         }
       }
-      fetchProperties(); 
-      if (activeTab === 'form') setActiveTab('list'); 
+      fetchProperties();
+      if (activeTab === 'form') setActiveTab('list');
+    }
+    } catch (err: any) {
+      console.error("🚨 ERROR JS en handleUpdateProperty:", err);
+      showPopup({ type: 'alert', variant: 'danger', title: 'Error Crítico', message: 'Falla interna: ' + err.message });
     }
   };
 
-  const handleDeleteProperty = async (id: string) => {
-    if (window.confirm('¿Eliminar permanentemente este registro?')) {
-      const { error } = await supabase.from('propiedades').delete().eq('idPropiedad', id);
-      if (error) alert('Error al eliminar: ' + error.message);
-      else { await logMovimiento(id, 'ELIMINACIÓN', 'Propiedad borrada del sistema'); fetchProperties(); }
-    }
+  const handleDeleteProperty = async (idPropiedad: string) => {
+    showPopup({
+      type: 'confirm',
+      variant: 'danger',
+      title: 'Confirmar Eliminación',
+      message: '¿Eliminar permanentemente este registro?',
+      confirmText: 'Eliminar',
+      onConfirm: async () => {
+        const { error } = await supabase.from('propiedades').delete().eq('idPropiedad', idPropiedad);
+        if (error) showPopup({ type: 'alert', variant: 'danger', title: 'Error', message: 'Error al eliminar: ' + error.message });
+        else { await logMovimiento(idPropiedad, 'ELIMINACIÓN', 'Propiedad borrada del sistema'); fetchProperties(); }
+      }
+    });
   };
 
   const handleBulkUpdateProperties = async (ids: string[], field: keyof Propiedad, value: any) => {
     const { error } = await supabase.from('propiedades').update({ [field]: value }).in('idPropiedad', ids);
-    if (error) alert('Error en actualización masiva: ' + error.message);
+    if (error) showPopup({ type: 'alert', variant: 'danger', title: 'Error', message: 'Error en actualización masiva: ' + error.message });
     else {
       for (const id of ids) await logMovimiento(id, 'EDICIÓN MASIVA', `Campo '${field}' actualizado a: ${value || 'VACÍO'}`);
       fetchProperties();
     }
   };
-  
+
   const handleBulkImport = async (importedData: any[]) => {
     try {
       const { error } = await supabase.from('propiedades').upsert(importedData, { onConflict: 'idPropiedad' });
       if (error) throw error;
-      alert(`¡Se importaron/actualizaron ${importedData.length} propiedades con éxito!`);
+      showPopup({ type: 'alert', variant: 'success', title: 'Éxito', message: `¡Se importaron/actualizaron ${importedData.length} propiedades con éxito!` });
       fetchProperties();
-    } catch (error: any) { alert('Error en la importación a la base de datos: ' + error.message); }
+    } catch (error: any) { showPopup({ type: 'alert', variant: 'danger', title: 'Error', message: 'Error en la importación a la base de datos: ' + error.message }); }
   };
 
   const startEditing = (prop: Propiedad) => { setEditingProperty(prop); setIsViewing(false); setActiveTab('form'); };
   const startViewing = (prop: Propiedad) => { setEditingProperty(prop); setIsViewing(true); setActiveTab('form'); };
 
   const handleLogout = () => {
-    localStorage.removeItem('ponty_session'); 
-    setIsAuthenticated(false); setCurrentUser(null); setActiveTab('home'); window.location.hash = ''; 
+    localStorage.removeItem('ponty_session');
+    setIsAuthenticated(false); setCurrentUser(null); setActiveTab('home'); window.location.hash = '';
   };
 
   if (!isAuthenticated) {
-    return <Login onLoginSuccess={(user) => { 
-      setCurrentUser(user); 
-      setIsAuthenticated(true); 
-      localStorage.setItem('ponty_session', JSON.stringify(user)); 
-      
-      // Aplicar redirección según el rol tras loguearse
+    return <Login onLoginSuccess={(user) => {
+      setCurrentUser(user);
+      setIsAuthenticated(true);
+      localStorage.setItem('ponty_session', JSON.stringify(user));
+
       if (user.tipo_usuario === 'ASESOR') {
-          setActiveTab('test');
-          window.location.hash = 'test';
-      } else if (user.tipo_usuario === 'CARGA') {
-          setActiveTab('list');
-          window.location.hash = 'list';
+        setActiveTab('test');
+        window.location.hash = 'test';
+      } else if (user.tipo_usuario === 'DATA LOADER') {
+        setActiveTab('list');
+        window.location.hash = 'list';
       } else {
-          setActiveTab('home');
-          window.location.hash = 'home';
+        setActiveTab('home');
+        window.location.hash = 'home';
       }
-    }} />;
+    }} showPopup={showPopup} />;
   }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300 flex flex-col font-sans">
+      
+      {/* --- GLOBAL POPUP SYSTEM --- */}
+      {popupConfig && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="fixed inset-0 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm" onClick={() => popupConfig.type === 'alert' && closePopup()}></div>
+          <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 transform transition-all scale-100 border border-slate-200 dark:border-slate-700">
+            <div className={`px-6 py-4 flex justify-between items-center ${
+              popupConfig.variant === 'danger' ? 'bg-red-600' : 
+              popupConfig.variant === 'warning' ? 'bg-amber-500' : 
+              popupConfig.variant === 'success' ? 'bg-emerald-600' : 'bg-indigo-600'
+            }`}>
+              <h3 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">
+                {popupConfig.variant === 'danger' || popupConfig.variant === 'warning' ? <AlertTriangle className="w-5 h-5" /> : null}
+                {popupConfig.title}
+              </h3>
+              {popupConfig.type === 'alert' && (
+                <button onClick={closePopup} className="text-white/70 hover:text-white transition-colors"><List className="w-5 h-5 opacity-0" /></button>
+              )}
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{popupConfig.message}</p>
+              <div className="mt-8 flex justify-end gap-3">
+                {popupConfig.type === 'confirm' && (
+                  <button onClick={() => { if (popupConfig.onCancel) popupConfig.onCancel(); closePopup(); }} className="px-5 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors uppercase tracking-wider">
+                    {popupConfig.cancelText || 'Cancelar'}
+                  </button>
+                )}
+                <button 
+                  onClick={() => { if (popupConfig.onConfirm) popupConfig.onConfirm(); closePopup(); }} 
+                  className={`px-5 py-2.5 text-xs font-bold text-white rounded-xl shadow-sm transition-all active:scale-95 uppercase tracking-wider ${
+                    popupConfig.variant === 'danger' ? 'bg-red-600 hover:bg-red-700' : 
+                    popupConfig.variant === 'warning' ? 'bg-amber-500 hover:bg-amber-600' : 
+                    popupConfig.variant === 'success' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'
+                  }`}
+                >
+                  {popupConfig.confirmText || 'Aceptar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <nav className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm sticky top-0 z-[60] transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center overflow-x-auto no-scrollbar">
-              
+
               <button onClick={() => setActiveTab('home')} className="flex-shrink-0 flex items-center hover:opacity-80 transition-opacity focus:outline-none mr-8">
                 <img src={logoPonty} alt="Casas Ponty Logo" className="h-6 w-auto object-contain" />
               </button>
-              
+
               <div className="flex space-x-6 min-w-max">
-                
+
                 {/* REGLA DE VISIBILIDAD DE MENÚS POR ROL */}
-                {!isCarga && (
+                {!isDataLoader && !isAsesor && (
                   <button onClick={() => setActiveTab('home')} className={`${activeTab === 'home' ? 'border-indigo-500 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-700'} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold transition-colors`}>
                     <HomeIcon className="w-4 h-4 mr-2" /> <span className="hidden md:inline">Inicio</span>
                   </button>
                 )}
 
-                <button onClick={() => setActiveTab('list')} className={`${activeTab === 'list' ? 'border-indigo-500 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-700'} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold transition-colors`}>
-                  <List className="w-4 h-4 mr-2" /> <span className="hidden md:inline">Inventario</span>
-                </button>
-                
-                {!isCarga && (
+                {!isAsesor && (
+                  <button onClick={() => setActiveTab('list')} className={`${activeTab === 'list' ? 'border-indigo-500 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-700'} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold transition-colors`}>
+                    <List className="w-4 h-4 mr-2" /> <span className="hidden md:inline">Inventario</span>
+                  </button>
+                )}
+
+                {!isDataLoader && !isCoordinador && (
                   <button onClick={() => setActiveTab('test')} className={`${activeTab === 'test' ? 'border-indigo-500 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-700'} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold transition-colors`}>
                     <FlaskConical className="w-4 h-4 mr-2" /> <span className="hidden md:inline">Apartar</span>
                   </button>
                 )}
-                
+
                 {(isSuperAdmin || isCoordinador || isAuditor) && (
                   <button onClick={() => setActiveTab('reporter')} className={`${activeTab === 'reporter' ? 'border-indigo-500 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-700'} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold transition-colors`}>
                     <PieChart className="w-4 h-4 mr-2" /> <span className="hidden md:inline">Reportes</span>
@@ -399,11 +577,11 @@ function App() {
                 )}
               </div>
             </div>
-            
+
             <div className="flex items-center ml-4 border-l border-slate-200 dark:border-slate-700 pl-4 space-x-3">
-              
+
               <div className="relative">
-                <button 
+                <button
                   onClick={() => setShowNotifications(!showNotifications)}
                   className="relative p-2 rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors focus:outline-none"
                 >
@@ -434,14 +612,14 @@ function App() {
                                 <div className="flex-1">
                                   <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight">{n.texto}</p>
                                   <p className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">{n.prop.desarrollo} - {n.prop.modelo}</p>
-                                  
+
                                   {n.tipo === 'rezago_equipo' && (
-                                    <button 
+                                    <button
                                       onClick={() => handleSendAlertEmail(n)}
                                       disabled={isSendingAlert === n.id}
                                       className="mt-2 inline-flex items-center px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-md text-[10px] font-black text-indigo-600 dark:text-indigo-400 hover:border-indigo-500 uppercase tracking-widest transition-all disabled:opacity-50"
                                     >
-                                      {isSendingAlert === n.id ? 'Enviando...' : <><Mail className="w-3 h-3 mr-1"/> Avisar a Asesor</>}
+                                      {isSendingAlert === n.id ? 'Enviando...' : <><Mail className="w-3 h-3 mr-1" /> Avisar a Asesor</>}
                                     </button>
                                   )}
                                 </div>
@@ -464,42 +642,44 @@ function App() {
 
       <div className="py-6 flex-1 overflow-auto">
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full">
-            {activeTab === 'home' && <Home properties={properties} onNavigateToApartados={() => setActiveTab('test')} />}
-            {activeTab === 'usuarios' && <Usuarios />}
-            
-            {activeTab === 'list' && (
-              <PropertyList 
-                properties={properties} 
-                catalogs={catalogs}
-                onView={startViewing}
-                onEdit={startEditing} 
-                onDelete={handleDeleteProperty} 
-                onBulkImport={handleBulkImport} 
-                onBulkUpdate={handleBulkUpdateProperties} 
-                isAdmin={currentUser?.es_admin}
-                currentUser={currentUser}
-              />
-            )}
-            
-            {activeTab === 'form' && (
-              <PropertyForm 
-                initialData={editingProperty} 
-                catalogs={catalogs} 
-                modelAssignments={modelAssignments} 
-                statusAssignments={statusAssignments} 
-                metodoCompraAssignments={metodoCompraAssignments} 
-                onSubmit={editingProperty ? handleUpdateProperty : handleAddProperty} 
-                onCancel={() => { setActiveTab('list'); setIsViewing(false); }} 
-                isEditing={!!editingProperty} 
-                isViewing={isViewing}
-                currentUser={currentUser}
-              />
-            )}
+          {activeTab === 'home' && <Home properties={properties} onNavigateToApartados={() => setActiveTab('test')} />}
+          {activeTab === 'usuarios' && <Usuarios showPopup={showPopup} />}
 
-            {activeTab === 'config' && <CatalogManager onCatalogChanged={fetchCatalogs} />}
-            {activeTab === 'schema' && <SchemaTable />}
-            {activeTab === 'test' && <Apartados properties={properties} catalogs={catalogs} onUpdateProperty={handleUpdateProperty} currentUser={currentUser} />}
-            {activeTab === 'reporter' && <ReporterView properties={properties} catalogs={catalogs} />}
+          {activeTab === 'list' && (
+            <PropertyList
+              properties={properties}
+              catalogs={catalogs}
+              onView={startViewing}
+              onEdit={startEditing}
+              onDelete={handleDeleteProperty}
+              onBulkImport={handleBulkImport}
+              onBulkUpdate={handleBulkUpdateProperties}
+              isAdmin={isSuperAdmin}
+              currentUser={currentUser}
+              showPopup={showPopup}
+            />
+          )}
+
+          {activeTab === 'form' && (
+            <PropertyForm
+              initialData={editingProperty}
+              catalogs={catalogs}
+              modelAssignments={modelAssignments}
+              statusAssignments={statusAssignments}
+              metodoCompraAssignments={metodoCompraAssignments}
+              onSubmit={editingProperty ? handleUpdateProperty : handleAddProperty}
+              onInlineUpdate={handleUpdatePropertyInline}
+              onCancel={() => { setActiveTab('list'); setIsViewing(false); }}
+              isEditing={!!editingProperty}
+              isViewing={isViewing}
+              currentUser={currentUser}
+            />
+          )}
+
+          {activeTab === 'config' && <CatalogManager onCatalogChanged={fetchCatalogs} />}
+          {activeTab === 'schema' && <SchemaTable />}
+          {activeTab === 'test' && <Apartados properties={properties} catalogs={catalogs} onUpdateProperty={handleUpdateProperty} currentUser={currentUser} onRefresh={fetchProperties} showPopup={showPopup} />}
+          {activeTab === 'reporter' && <ReporterView properties={properties} catalogs={catalogs} showPopup={showPopup} />}
         </main>
       </div>
     </div>

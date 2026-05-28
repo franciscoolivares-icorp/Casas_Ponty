@@ -8,11 +8,14 @@ import {
   ChevronRight, Loader2, ShieldCheck, AlertCircle, KeyRound, ArrowLeft
 } from 'lucide-react';
 
+import { PopupConfig } from '../types';
+
 interface LoginProps {
   onLoginSuccess: (user: any) => void;
+  showPopup: (config: PopupConfig) => void;
 }
 
-export default function Login({ onLoginSuccess }: LoginProps) {
+export default function Login({ onLoginSuccess, showPopup }: LoginProps) {
   // Estados de vista y carga
   const [step, setStep] = useState<'login' | 'change-password' | 'forgot-password'>('login');
   const [loading, setLoading] = useState(false);
@@ -104,7 +107,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 
       if (updateError) throw updateError;
 
-      alert('¡Contraseña actualizada con éxito!');
+      showPopup({ type: 'alert', variant: 'success', title: 'Éxito', message: '¡Contraseña actualizada con éxito!' });
       onLoginSuccess({ ...tempUser, es_nuevo: false });
     } catch (err: any) {
       setError('Error al actualizar: ' + err.message);
@@ -168,7 +171,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         'Wk9H8F1qHcLw1V9H3'    // Tu Public Key
       );
 
-      alert(`Se ha enviado una contraseña temporal a ${user.correo}`);
+      showPopup({ type: 'alert', variant: 'success', title: 'Éxito', message: `Se ha enviado una contraseña temporal a ${user.correo}` });
       setStep('login');
       setResetEmail('');
     } catch (err: any) {

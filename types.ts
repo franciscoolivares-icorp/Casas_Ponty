@@ -208,6 +208,7 @@ export interface Propiedad {
   fechaVenta?: string | null;
   fechaEscritura?: string | null;
   fechaDesde?: string | null;
+  documentos?: 'OK' | 'PARCIAL' | null;
   tipoUsuario?: string;
   retroAsesor?: string;
   titulacion?: string;
@@ -218,3 +219,14 @@ export interface Propiedad {
   observacionesDireccion?: string | null;
   fechaResolucion?: string | null;
 }
+
+export type PopupConfig = {
+  type: 'alert' | 'confirm';
+  title: string;
+  message: string;
+  onConfirm?: () => void;
+  onCancel?: () => void;
+  confirmText?: string;
+  cancelText?: string;
+  variant?: 'danger' | 'warning' | 'info' | 'success';
+};

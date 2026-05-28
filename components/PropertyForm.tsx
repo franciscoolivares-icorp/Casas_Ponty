@@ -14,6 +14,7 @@ interface PropertyFormProps {
   statusAssignments: { [group: string]: string[] };
   metodoCompraAssignments: { [group: string]: string[] };
   onSubmit: (property: Partial<Propiedad>) => void;
+  onInlineUpdate?: (property: Partial<Propiedad>) => void;
   onCancel: () => void;
   isEditing: boolean;
   isViewing?: boolean;
@@ -88,7 +89,7 @@ const InlineField = ({
 };
 
 export const PropertyForm: React.FC<PropertyFormProps> = ({ 
-  initialData, catalogs, modelAssignments, statusAssignments, metodoCompraAssignments, onSubmit, onCancel, isEditing, isViewing = false, currentUser
+  initialData, catalogs, modelAssignments, statusAssignments, metodoCompraAssignments, onSubmit, onInlineUpdate, onCancel, isEditing, isViewing = false, currentUser
 }) => {
   const [formData, setFormData] = useState<Partial<Propiedad>>(
     initialData || {
@@ -201,14 +202,40 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
     finally { setIsUploading(prev => ({ ...prev, [field]: false })); }
   };
 
+
+  const handleFieldChange = (field: keyof Propiedad, value: any) => {
+    console.log("🛠️ handleFieldChange llamado para", field, "con valor", value);
+    setFormData(prev => ({ ...prev, [field]: value }));
+    console.log("🛠️ isEditing:", isEditing, "onInlineUpdate existe:", !!onInlineUpdate);
+    if (isEditing && onInlineUpdate) {
+      // Create partial update object
+      const updateData: Partial<Propiedad> = { idPropiedad: formData.idPropiedad, [field]: value };
+      
+      // Handle computed fields that might depend on this change immediately
+      if (field === 'estado') {
+        if (['DISPONIBLE', 'PRODUCCIÓN'].includes(value || '')) updateData.precioOperacion = 0;
+        else if (value === 'APARTADO') updateData.precioOperacion = formData.precioFinal;
+      }
+      console.log("🛠️ Llamando onInlineUpdate con:", updateData);
+      onInlineUpdate(updateData);
+    }
+  };
+
   const validateAndSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    setFormError(null); 
-    const finalData = { ...formData };
-    delete finalData.dtu; 
-    if (['DISPONIBLE', 'PRODUCCIÓN'].includes(finalData.estado || '')) finalData.precioOperacion = 0;
-    else if (finalData.estado === 'APARTADO' && !isEditing) finalData.precioOperacion = finalData.precioFinal;
-    onSubmit(finalData);
+    console.log("🛠️ validateAndSubmit INICIADO. FormData:", formData);
+    try {
+      setFormError(null); 
+      const finalData = { ...formData };
+      delete finalData.dtu; 
+      if (['DISPONIBLE', 'PRODUCCIÓN'].includes(finalData.estado || '')) finalData.precioOperacion = 0;
+      else if (finalData.estado === 'APARTADO' && !isEditing) finalData.precioOperacion = finalData.precioFinal;
+      console.log("🛠️ validateAndSubmit LLAMANDO onSubmit. FinalData:", finalData);
+      onSubmit(finalData);
+    } catch (err: any) {
+      console.error("🚨 ERROR JS en validateAndSubmit:", err);
+      setFormError("Error interno: " + err.message);
+    }
   };
 
   const getModelosDisponibles = () => formData.desarrollo ? modelAssignments[formData.desarrollo] || catalogs.modelo || [] : catalogs.modelo || [];
@@ -271,7 +298,7 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
 
   return (
     <>
-      <form onSubmit={validateAndSubmit} className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in duration-500 transition-colors flex flex-col h-[85vh]">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in duration-500 transition-colors flex flex-col h-[85vh]">
         
         <div className="bg-slate-50 dark:bg-slate-800 px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center shrink-0">
           <div>
@@ -285,10 +312,10 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
           </div>
           <div className="flex gap-3">
             <button type="button" onClick={onCancel} className="px-5 py-2.5 border border-slate-300 dark:border-slate-600 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center">
-              <ArrowLeft className="w-4 h-4 mr-2" /> Cancelar
+              <ArrowLeft className="w-4 h-4 mr-2" /> {isViewing ? 'Cerrar' : 'Cancelar'}
             </button>
-            {!isViewing && (
-              <button type="submit" className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-200 dark:shadow-none transition-all active:scale-95 flex items-center">
+            {!isViewing && !isEditing && (
+              <button type="button" onClick={() => validateAndSubmit()} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-200 dark:shadow-none transition-all active:scale-95 flex items-center">
                 <Save className="w-4 h-4 mr-2" /> {isEditing ? 'Guardar Cambios' : 'Crear Propiedad'}
               </button>
             )}
@@ -311,25 +338,25 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
             <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
               <div className="md:col-span-2 lg:col-span-1">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">ID Propiedad</label>
-                <InlineField isEditing={!isViewing} isViewing={isViewing} value={formData.idPropiedad || ''} onChange={v => setFormData({...formData, idPropiedad: String(v).trim().toUpperCase()})}>
+                <InlineField isEditing={!isViewing} isViewing={isViewing} value={formData.idPropiedad || ''} onChange={v => handleFieldChange('idPropiedad', String(v).trim().toUpperCase())}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm font-bold text-indigo-700 dark:text-indigo-400 outline-none uppercase focus:ring-2 focus:ring-indigo-500" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Desarrollo</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.desarrollo || ''} onChange={v => setFormData({...formData, desarrollo: v})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.desarrollo || ''} onChange={v => handleFieldChange('desarrollo', v)}>
                   {(val, change) => <select className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-slate-50 dark:bg-slate-900 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)}><option value="">-</option>{catalogs.desarrollo?.map(d => <option key={d} value={d}>{d}</option>)}</select>}
                 </InlineField>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nivel</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.nivel || ''} onChange={v => setFormData({...formData, nivel: v})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.nivel || ''} onChange={v => handleFieldChange('nivel', v)}>
                   {(val, change) => <select className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-slate-50 dark:bg-slate-900 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)}><option value="">-</option>{catalogs.nivel?.map(n => <option key={n} value={n}>{n}</option>)}</select>}
                 </InlineField>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Modelo</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.modelo || ''} onChange={v => setFormData({...formData, modelo: v})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.modelo || ''} onChange={v => handleFieldChange('modelo', v)}>
                   {(val, change) => <select className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-slate-50 dark:bg-slate-900 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)}><option value="">-</option>{getModelosDisponibles().map(m => <option key={m} value={m}>{m}</option>)}</select>}
                 </InlineField>
               </div>
@@ -350,7 +377,7 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 items-end">
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Estado</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.estado || 'DISPONIBLE'} onChange={v => setFormData({...formData, estado: v})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.estado || 'DISPONIBLE'} onChange={v => handleFieldChange('estado', v)}>
                   {(val, change) => (
                     <select 
                       className="w-full border border-indigo-300 dark:border-indigo-600 rounded-lg p-2 bg-indigo-50 dark:bg-indigo-900/20 text-sm font-bold text-indigo-700 dark:text-indigo-400 outline-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer"
@@ -371,14 +398,14 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
               </div>
               <div className="md:col-span-2">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Fecha Apartado</label>
-                <InlineField type="date" isEditing={true} isViewing={isViewing} value={formData.fechaApartado || ''} onChange={v => setFormData({...formData, fechaApartado: v})}>
+                <InlineField type="date" isEditing={true} isViewing={isViewing} value={formData.fechaApartado || ''} onChange={v => handleFieldChange('fechaApartado', v)}>
                   {(val, change) => <input type="date" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val ? String(val).split('T')[0] : ''} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Días Aut. Apartado</label>
-                <InlineField type="number" isEditing={true} isViewing={isViewing} value={formData.diasAutorizadosApartado ?? 7} onChange={v => setFormData({...formData, diasAutorizadosApartado: Number(v)})}>
+                <InlineField type="number" isEditing={true} isViewing={isViewing} value={formData.diasAutorizadosApartado ?? 7} onChange={v => handleFieldChange('diasAutorizadosApartado', Number(v))}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
@@ -398,13 +425,13 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Fecha Venta</label>
-                <InlineField type="date" isEditing={true} isViewing={isViewing} value={formData.fechaVenta || ''} onChange={v => setFormData({...formData, fechaVenta: v})}>
+                <InlineField type="date" isEditing={true} isViewing={isViewing} value={formData.fechaVenta || ''} onChange={v => handleFieldChange('fechaVenta', v)}>
                   {(val, change) => <input type="date" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val ? String(val).split('T')[0] : ''} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div className="md:col-span-3">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Fecha Escritura</label>
-                <InlineField type="date" isEditing={true} isViewing={isViewing} value={formData.fechaEscritura || ''} onChange={v => setFormData({...formData, fechaEscritura: v})}>
+                <InlineField type="date" isEditing={true} isViewing={isViewing} value={formData.fechaEscritura || ''} onChange={v => handleFieldChange('fechaEscritura', v)}>
                   {(val, change) => <input type="date" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val ? String(val).split('T')[0] : ''} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
@@ -418,32 +445,32 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
             <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Precio de Lista</label>
-                <InlineField type="currency" isEditing={true} isViewing={isViewing} value={formData.precioLista ?? ''} onChange={v => setFormData({...formData, precioLista: Number(v)})}>
+                <InlineField type="currency" isEditing={true} isViewing={isViewing} value={formData.precioLista ?? ''} onChange={v => handleFieldChange('precioLista', Number(v))}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Descuento (-)</label>
-                <InlineField type="currency" isEditing={true} isViewing={isViewing} value={Math.abs(Number(formData.descuento) || 0) || ''} onChange={v => setFormData({...formData, descuento: Math.abs(Number(v))})}>
+                <InlineField type="currency" isEditing={true} isViewing={isViewing} value={Math.abs(Number(formData.descuento) || 0) || ''} onChange={v => handleFieldChange('descuento', Math.abs(Number(v)))}>
                   {(val, change) => <input type="text" className="w-full border border-red-200 dark:border-red-900/50 rounded-lg p-2 bg-red-50 dark:bg-red-900/10 text-sm font-bold text-red-700 dark:text-red-400 outline-none" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">$ Obras Adicionales (+)</label>
-                <InlineField type="currency" isEditing={true} isViewing={isViewing} value={formData.precioObrasAdicionales ?? ''} onChange={v => setFormData({...formData, precioObrasAdicionales: Number(v)})}>
+                <InlineField type="currency" isEditing={true} isViewing={isViewing} value={formData.precioObrasAdicionales ?? ''} onChange={v => handleFieldChange('precioObrasAdicionales', Number(v))}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">M2 Terr. Excedente</label>
-                <InlineField type="number" isEditing={true} isViewing={isViewing} value={formData.m2TerrExc ?? ''} onChange={v => setFormData({...formData, m2TerrExc: Number(v)})}>
+                <InlineField type="number" isEditing={true} isViewing={isViewing} value={formData.m2TerrExc ?? ''} onChange={v => handleFieldChange('m2TerrExc', Number(v))}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">$ X M2 Exc</label>
-                <InlineField type="currency" isEditing={true} isViewing={isViewing} value={formData.precioXM2Exc ?? ''} onChange={v => setFormData({...formData, precioXM2Exc: Number(v)})}>
+                <InlineField type="currency" isEditing={true} isViewing={isViewing} value={formData.precioXM2Exc ?? ''} onChange={v => handleFieldChange('precioXM2Exc', Number(v))}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
@@ -462,7 +489,7 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Valor Avalúo</label>
-                <InlineField type="currency" isEditing={true} isViewing={isViewing} value={formData.valorAvaluo ?? ''} onChange={v => setFormData({...formData, valorAvaluo: Number(v)})}>
+                <InlineField type="currency" isEditing={true} isViewing={isViewing} value={formData.valorAvaluo ?? ''} onChange={v => handleFieldChange('valorAvaluo', Number(v))}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
@@ -475,7 +502,7 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
                        <span className="text-[8px] bg-slate-200 dark:bg-slate-700 text-slate-500 px-1.5 py-0.5 rounded uppercase font-bold">Auto</span>
                     </div>
                 ) : (
-                    <InlineField isEditing={true} isViewing={isViewing} value={formData.dtuAvaluo || 'SIN DTU'} onChange={v => setFormData({...formData, dtuAvaluo: v})}>
+                    <InlineField isEditing={true} isViewing={isViewing} value={formData.dtuAvaluo || 'SIN DTU'} onChange={v => handleFieldChange('dtuAvaluo', v)}>
                       {(val, change) => (
                         <select className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-colors" value={val} onChange={e => change(e.target.value)}>
                           <option value="SIN DTU">SIN DTU</option>
@@ -489,13 +516,13 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
 
               <div className="md:col-span-2">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Precio Operación</label>
-                <InlineField type="currency" isEditing={true} isViewing={isViewing} value={formData.precioOperacion ?? ''} onChange={v => setFormData({...formData, precioOperacion: Number(v)})}>
+                <InlineField type="currency" isEditing={true} isViewing={isViewing} value={formData.precioOperacion ?? ''} onChange={v => handleFieldChange('precioOperacion', Number(v))}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">EK</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.ek || ''} onChange={v => setFormData({...formData, ek: String(v).toUpperCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.ek || ''} onChange={v => handleFieldChange('ek', String(v).toUpperCase())}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
@@ -509,44 +536,44 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
               <div className="md:col-span-2">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Calle</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.calle || ''} onChange={v => setFormData({...formData, calle: String(v).toUpperCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.calle || ''} onChange={v => handleFieldChange('calle', String(v).toUpperCase())}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Núm Ext</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.numeroExterior || ''} onChange={v => setFormData({...formData, numeroExterior: String(v).toUpperCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.numeroExterior || ''} onChange={v => handleFieldChange('numeroExterior', String(v).toUpperCase())}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Manzana</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.manzana || ''} onChange={v => setFormData({...formData, manzana: String(v).toUpperCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.manzana || ''} onChange={v => handleFieldChange('manzana', String(v).toUpperCase())}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Lote</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.lote || ''} onChange={v => setFormData({...formData, lote: String(v).toUpperCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.lote || ''} onChange={v => handleFieldChange('lote', String(v).toUpperCase())}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Condómino</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.condomino || ''} onChange={v => setFormData({...formData, condomino: String(v).toUpperCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.condomino || ''} onChange={v => handleFieldChange('condomino', String(v).toUpperCase())}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Edificio</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.edificio || ''} onChange={v => setFormData({...formData, edificio: String(v).toUpperCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.edificio || ''} onChange={v => handleFieldChange('edificio', String(v).toUpperCase())}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Núm Int</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.numeroInterior || ''} onChange={v => setFormData({...formData, numeroInterior: String(v).toUpperCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.numeroInterior || ''} onChange={v => handleFieldChange('numeroInterior', String(v).toUpperCase())}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
@@ -560,20 +587,20 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
               <div className="md:col-span-2">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nombre Comprador</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.nombreComprador || ''} onChange={v => setFormData({...formData, nombreComprador: String(v).toUpperCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.nombreComprador || ''} onChange={v => handleFieldChange('nombreComprador', String(v).toUpperCase())}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div className="md:col-span-2">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Asesor de Venta</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.asesor || ''} onChange={v => setFormData({...formData, asesor: String(v).toUpperCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.asesor || ''} onChange={v => handleFieldChange('asesor', String(v).toUpperCase())}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Método Compra</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.metodoCompra || ''} onChange={v => setFormData({...formData, metodoCompra: v})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.metodoCompra || ''} onChange={v => handleFieldChange('metodoCompra', v)}>
                   {(val, change) => <select className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)}><option value="">-</option>{catalogs.metodoCompra?.map(m => <option key={m} value={m}>{m}</option>)}</select>}
                 </InlineField>
               </div>
@@ -586,73 +613,73 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Es Asesor Externo</label>
-                <InlineField type="boolean" isEditing={true} isViewing={isViewing} value={formData.asesorExterno || false} onChange={v => setFormData({...formData, asesorExterno: v})}>
+                <InlineField type="boolean" isEditing={true} isViewing={isViewing} value={formData.asesorExterno || false} onChange={v => handleFieldChange('asesorExterno', v)}>
                   {(val, change) => <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-indigo-600" checked={val} onChange={e => change(e.target.checked)} />}
                 </InlineField>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Banco</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.banco || ''} onChange={v => setFormData({...formData, banco: String(v).toUpperCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.banco || ''} onChange={v => handleFieldChange('banco', String(v).toUpperCase())}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nombre Broker</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.nombreBrokerBanco || ''} onChange={v => setFormData({...formData, nombreBrokerBanco: String(v).toUpperCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.nombreBrokerBanco || ''} onChange={v => handleFieldChange('nombreBrokerBanco', String(v).toUpperCase())}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Teléfono Broker</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.telefonoBrokerBanco || ''} onChange={v => setFormData({...formData, telefonoBrokerBanco: String(v).toUpperCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.telefonoBrokerBanco || ''} onChange={v => handleFieldChange('telefonoBrokerBanco', String(v).toUpperCase())}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div className="md:col-span-2">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Correo Broker</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.correoBrokerBanco || ''} onChange={v => setFormData({...formData, correoBrokerBanco: String(v).toLowerCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.correoBrokerBanco || ''} onChange={v => handleFieldChange('correoBrokerBanco', String(v).toLowerCase())}>
                   {(val, change) => <input type="email" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tipo Usuario</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.tipoUsuario || ''} onChange={v => setFormData({...formData, tipoUsuario: String(v).toUpperCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.tipoUsuario || ''} onChange={v => handleFieldChange('tipoUsuario', String(v).toUpperCase())}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
 
               <div className="md:col-span-3">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Observaciones (Operativas)</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.observaciones || ''} onChange={v => setFormData({...formData, observaciones: String(v).toUpperCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.observaciones || ''} onChange={v => handleFieldChange('observaciones', String(v).toUpperCase())}>
                   {(val, change) => <textarea className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" rows={1} value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
 
               <div className="md:col-span-4">
                 <label className="block text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-1">Observaciones Dirección</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.observacionesDireccion || ''} onChange={v => setFormData({...formData, observacionesDireccion: String(v).toUpperCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.observacionesDireccion || ''} onChange={v => handleFieldChange('observacionesDireccion', String(v).toUpperCase())}>
                   {(val, change) => <textarea className="w-full border border-indigo-300 dark:border-indigo-600 rounded-lg p-3 bg-indigo-50 dark:bg-indigo-900/20 text-sm font-bold text-indigo-900 dark:text-indigo-100 outline-none uppercase shadow-inner" rows={2} placeholder="Resumen ejecutivo o notas importantes para Dirección..." value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
 
               <div className="md:col-span-2">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Retro Asesor</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.retroAsesor || ''} onChange={v => setFormData({...formData, retroAsesor: String(v).toUpperCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.retroAsesor || ''} onChange={v => handleFieldChange('retroAsesor', String(v).toUpperCase())}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
               <div className="md:col-span-2">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Titulación</label>
-                <InlineField isEditing={true} isViewing={isViewing} value={formData.titulacion || ''} onChange={v => setFormData({...formData, titulacion: String(v).toUpperCase()})}>
+                <InlineField isEditing={true} isViewing={isViewing} value={formData.titulacion || ''} onChange={v => handleFieldChange('titulacion', String(v).toUpperCase())}>
                   {(val, change) => <input type="text" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none uppercase" value={val} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Fecha Desde</label>
-                <InlineField type="date" isEditing={true} isViewing={isViewing} value={formData.fechaDesde || ''} onChange={v => setFormData({...formData, fechaDesde: v})}>
+                <InlineField type="date" isEditing={true} isViewing={isViewing} value={formData.fechaDesde || ''} onChange={v => handleFieldChange('fechaDesde', v)}>
                   {(val, change) => <input type="date" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none" value={val ? String(val).split('T')[0] : ''} onChange={e => change(e.target.value)} />}
                 </InlineField>
               </div>
@@ -670,7 +697,7 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
                   <label className="flex items-center text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wider mb-1">
                     <Calendar className="w-3 h-3 mr-1" /> Fecha Resolución
                   </label>
-                  <InlineField type="date" isEditing={true} isViewing={isViewing} value={formData.fechaResolucion || ''} onChange={v => setFormData({...formData, fechaResolucion: v})}>
+                  <InlineField type="date" isEditing={true} isViewing={isViewing} value={formData.fechaResolucion || ''} onChange={v => handleFieldChange('fechaResolucion', v)}>
                     {(val, change) => <input type="date" className="w-full border border-orange-300 dark:border-orange-600 rounded-lg p-2 bg-orange-50/50 dark:bg-orange-900/10 text-sm font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-orange-500" value={val ? String(val).split('T')[0] : ''} onChange={e => change(e.target.value)} />}
                   </InlineField>
                 </div>
@@ -694,7 +721,7 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
           )}
 
         </div>
-      </form>
+      </div>
     </>
   );
 };
