@@ -20,6 +20,7 @@ interface PropertyListProps {
   isAdmin: boolean;
   currentUser?: any; 
   showPopup: (config: PopupConfig) => void;
+  onRefresh?: () => void;
 }
 
 interface ColumnConfig { id: string; label: string; visible: boolean; }
@@ -70,7 +71,8 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'telefonoBrokerBanco', label: 'Tel. Broker', visible: false },
   { id: 'correoBrokerBanco', label: 'Correo Broker', visible: false },
   { id: 'diasRezago', label: 'Días de Rezago', visible: false },
-  { id: 'diasDesdeRevisar', label: 'Días desde Revisar', visible: false }
+  { id: 'diasDesdeRevisar', label: 'Días desde Revisar', visible: false },
+  { id: 'documentos', label: 'Revisión Docs', visible: false }
 ];
 
 type BulkFieldType = 'currency' | 'number' | 'text' | 'date' | 'select_estado' | 'select_dtu';
@@ -91,7 +93,7 @@ const normalizeText = (text: string) => (text || "").toString().toLowerCase().no
 interface FilterRule { id: string; field: string; operator: string; value: string; }
 
 export const PropertyList: React.FC<PropertyListProps> = ({ 
-  properties, catalogs, onEdit, onView, onDelete, onBulkImport, onBulkUpdate, isAdmin, currentUser, showPopup 
+  properties, catalogs, onEdit, onView, onDelete, onBulkImport, onBulkUpdate, isAdmin, currentUser, showPopup, onRefresh 
 }) => {
   const configPanelRef = useRef<HTMLDivElement>(null);
   const dragColumnItem = useRef<number | null>(null);
@@ -140,7 +142,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
   const desarrollosAsignados = currentUser?.desarrollos_asignados || [];
   
   const canEdit = isAdmin || esCoordinador;
-  const canImport = isAdmin || isCoordinador || esDataLoader || esCarga;
+  const canImport = isAdmin || esDataLoader || esCarga;
   const canExport = isAdmin || esCoordinador || esAuditor || esCarga;
 
   useEffect(() => {
@@ -327,6 +329,7 @@ export const PropertyList: React.FC<PropertyListProps> = ({
   };
 
   const getOptionsForField = (field: string) => {
+    if (field === 'documentos') return ['OK', 'PARCIAL'];
     const options = new Set<string>();
     properties.forEach(p => {
         const val = String(p[field as keyof Propiedad] || '');
@@ -520,7 +523,20 @@ export const PropertyList: React.FC<PropertyListProps> = ({
         if (val === 'CON DTU') colorClass = 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400';
         return <span className={`px-2.5 py-1 rounded-md font-bold text-xs ${colorClass}`}>{String(val)}</span>;
     }
-    if (['fechaApartado', 'fechaVenta', 'fechaEscritura', 'fechaDesde', 'fechaResolucion'].includes(colId)) {
+    if (colId === 'fechaResolucion') {
+        const valStr = String(val).split('T')[0];
+        const today = new Date();
+        const todayStr = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+        
+        let colorClass = 'font-medium text-slate-700 dark:text-slate-300';
+        if (valStr < todayStr) {
+            colorClass = 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 px-2.5 py-1 rounded-md text-xs font-bold';
+        } else if (valStr === todayStr) {
+            colorClass = 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 px-2.5 py-1 rounded-md text-xs font-bold';
+        }
+        return <span className={colorClass}>{valStr}</span>;
+    }
+    if (['fechaApartado', 'fechaVenta', 'fechaEscritura', 'fechaDesde'].includes(colId)) {
         return <span className="font-medium text-slate-700 dark:text-slate-300">{String(val).split('T')[0]}</span>;
     }
     return String(val);
@@ -577,6 +593,14 @@ export const PropertyList: React.FC<PropertyListProps> = ({
               <button onClick={handleClearDataLoader} disabled={isUploading} className="px-4 py-2.5 rounded-lg flex items-center gap-2 text-sm font-bold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors disabled:opacity-50">
                 <Eraser className="w-4 h-4" /> Vaciar Registros
               </button>
+          )}
+
+          {onRefresh && (
+            <button onClick={onRefresh} className="px-4 py-2.5 rounded-lg flex items-center gap-2 text-sm font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm" title="Actualizar datos">
+              <Check className="w-4 h-4" style={{display: 'none'}} />
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+              Actualizar
+            </button>
           )}
 
           <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-1 hidden lg:block"></div>

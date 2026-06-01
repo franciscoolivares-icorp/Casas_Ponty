@@ -59,6 +59,15 @@ function App() {
       // REDIRECCIÓN INTELIGENTE DE PESTAÑA INICIAL POR ROL
       if (hash && validTabs.includes(hash)) {
         setActiveTab(hash as any);
+        if (hash === 'form') {
+           const savedProp = localStorage.getItem('ponty_editing_property');
+           if (savedProp) {
+             try {
+               setEditingProperty(JSON.parse(savedProp));
+               setIsViewing(localStorage.getItem('ponty_is_viewing') === 'true');
+             } catch(e) {}
+           }
+        }
       } else {
         if (user.tipo_usuario === 'ASESOR') {
           setActiveTab('test');
@@ -303,7 +312,12 @@ Saludos,`;
   };
 
   const handleAddProperty = async (newProperty: Partial<Propiedad>) => {
-    const { data, error } = await supabase.from('propiedades').insert([newProperty]).select();
+    const cleanProperty = { ...newProperty };
+    const dateFields: (keyof Propiedad)[] = ['fechaApartado', 'fechaVenta', 'fechaEscritura', 'fechaDesde', 'fechaResolucion'];
+    dateFields.forEach(field => {
+      if (cleanProperty[field] === '') (cleanProperty as any)[field] = null;
+    });
+    const { data, error } = await supabase.from('propiedades').insert([cleanProperty]).select();
     if (error) showPopup({ type: 'alert', variant: 'danger', title: 'Error', message: 'Error al guardar: ' + error.message });
     else {
       if (data && data[0]) await logMovimiento(data[0].idPropiedad, 'ALTA DE PROPIEDAD', `Propiedad agregada con estatus ${data[0].estado}`);
@@ -317,6 +331,12 @@ Saludos,`;
     try {
       const { idPropiedad, ...restOfData } = updatedProperty;
       const oldProp = properties.find(p => p.idPropiedad === idPropiedad);
+      
+      const dateFields: (keyof Propiedad)[] = ['fechaApartado', 'fechaVenta', 'fechaEscritura', 'fechaDesde', 'fechaResolucion'];
+      dateFields.forEach(field => {
+        if (restOfData[field] === '') (restOfData as any)[field] = null;
+      });
+
       console.log("🛠️ App.tsx: Preparando envío INLINE a Supabase. ID:", idPropiedad, "Data:", restOfData);
       
       const { error, status, statusText } = await supabase.from('propiedades').update(restOfData).eq('idPropiedad', idPropiedad);
@@ -369,6 +389,12 @@ Saludos,`;
     try {
       const { idPropiedad, ...restOfData } = updatedProperty;
       const oldProp = properties.find(p => p.idPropiedad === idPropiedad);
+
+      const dateFields: (keyof Propiedad)[] = ['fechaApartado', 'fechaVenta', 'fechaEscritura', 'fechaDesde', 'fechaResolucion'];
+      dateFields.forEach(field => {
+        if (restOfData[field] === '') (restOfData as any)[field] = null;
+      });
+
       console.log("🛠️ App.tsx: Preparando envío a Supabase. ID:", idPropiedad, "Data:", restOfData);
 
       const { error } = await supabase.from('propiedades').update(restOfData).eq('idPropiedad', idPropiedad);
@@ -410,7 +436,10 @@ Saludos,`;
         }
       }
       fetchProperties();
-      if (activeTab === 'form') setActiveTab('list');
+      const updatedProp = { ...oldProp, ...restOfData } as Propiedad;
+      setEditingProperty(updatedProp);
+      localStorage.setItem('ponty_editing_property', JSON.stringify(updatedProp));
+      showPopup({ type: 'alert', variant: 'success', title: 'Éxito', message: '¡Propiedad actualizada correctamente!' });
     }
     } catch (err: any) {
       console.error("🚨 ERROR JS en handleUpdateProperty:", err);
@@ -434,7 +463,12 @@ Saludos,`;
   };
 
   const handleBulkUpdateProperties = async (ids: string[], field: keyof Propiedad, value: any) => {
-    const { error } = await supabase.from('propiedades').update({ [field]: value }).in('idPropiedad', ids);
+    let cleanValue = value;
+    const dateFields = ['fechaApartado', 'fechaVenta', 'fechaEscritura', 'fechaDesde', 'fechaResolucion'];
+    if (dateFields.includes(field as string) && cleanValue === '') {
+      cleanValue = null;
+    }
+    const { error } = await supabase.from('propiedades').update({ [field]: cleanValue }).in('idPropiedad', ids);
     if (error) showPopup({ type: 'alert', variant: 'danger', title: 'Error', message: 'Error en actualización masiva: ' + error.message });
     else {
       for (const id of ids) await logMovimiento(id, 'EDICIÓN MASIVA', `Campo '${field}' actualizado a: ${value || 'VACÍO'}`);
@@ -451,8 +485,16 @@ Saludos,`;
     } catch (error: any) { showPopup({ type: 'alert', variant: 'danger', title: 'Error', message: 'Error en la importación a la base de datos: ' + error.message }); }
   };
 
-  const startEditing = (prop: Propiedad) => { setEditingProperty(prop); setIsViewing(false); setActiveTab('form'); };
-  const startViewing = (prop: Propiedad) => { setEditingProperty(prop); setIsViewing(true); setActiveTab('form'); };
+  const startEditing = (prop: Propiedad) => { 
+    setEditingProperty(prop); setIsViewing(false); setActiveTab('form'); 
+    localStorage.setItem('ponty_editing_property', JSON.stringify(prop));
+    localStorage.setItem('ponty_is_viewing', 'false');
+  };
+  const startViewing = (prop: Propiedad) => { 
+    setEditingProperty(prop); setIsViewing(true); setActiveTab('form'); 
+    localStorage.setItem('ponty_editing_property', JSON.stringify(prop));
+    localStorage.setItem('ponty_is_viewing', 'true');
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('ponty_session');
@@ -561,7 +603,7 @@ Saludos,`;
 
                 {isSuperAdmin && (
                   <>
-                    <button onClick={() => { setEditingProperty(undefined); setIsViewing(false); setActiveTab('form'); }} className={`${activeTab === 'form' ? 'border-indigo-500 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-700'} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold transition-colors`}>
+                    <button onClick={() => { setEditingProperty(undefined); setIsViewing(false); setActiveTab('form'); localStorage.removeItem('ponty_editing_property'); localStorage.removeItem('ponty_is_viewing'); }} className={`${activeTab === 'form' ? 'border-indigo-500 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-700'} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold transition-colors`}>
                       <PlusCircle className="w-4 h-4 mr-2" /> <span className="hidden md:inline">Nuevo</span>
                     </button>
                     <button onClick={() => setActiveTab('usuarios')} className={`${activeTab === 'usuarios' ? 'border-indigo-500 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-700'} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold transition-colors`}>
@@ -657,6 +699,7 @@ Saludos,`;
               isAdmin={isSuperAdmin}
               currentUser={currentUser}
               showPopup={showPopup}
+              onRefresh={fetchProperties}
             />
           )}
 

@@ -66,7 +66,18 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
     return properties;
   }, [properties, isCoordinador, desarrollosAsignados]);
 
+
+  const getDiffDays = (dateStr?: string | null) => {
+    if (!dateStr) return null;
+    const d = new Date(dateStr + 'T12:00:00');
+    if (isNaN(d.getTime())) return null;
+    const today = new Date();
+    return Math.floor((today.getTime() - d.getTime()) / (1000 * 3600 * 24));
+  };
+  const getDiasDesdeRevisar = (p: Propiedad) => p.fechaDesde ? (getDiffDays(p.fechaDesde) || 0) + 1 : 0;
+
   const [selectedDesarrollo, setSelectedDesarrollo] = useState<string>('');
+
   const [selectedModelos, setSelectedModelos] = useState<string[]>([]);
   const [selectedNiveles, setSelectedNiveles] = useState<string[]>([]);
   const [showColConfig, setShowColConfig] = useState(false);
@@ -177,16 +188,17 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
   const reservedProperties = useMemo(() => {
     let props = propertiesWithAccess.filter(p => {
       const status = (p.estado || '').toUpperCase();
-      return status === 'APARTADO' || status === 'VENDIDO' || status === 'VENDIDO-P' || status === 'PREVENTA';
+      const needsReview = getDiasDesdeRevisar(p) > 0;
+      return status === 'APARTADO' || status === 'VENDIDO' || status === 'VENDIDO-P' || status === 'PREVENTA' || needsReview;
     });
 
     if (isAsesor && currentUser?.nombre) {
       props = props.filter(p => p.asesor === currentUser.nombre);
     }
-    return props.sort((a, b) => (b.diasDesdeRevisar || 0) - (a.diasDesdeRevisar || 0));
+    return props.sort((a, b) => getDiasDesdeRevisar(b) - getDiasDesdeRevisar(a));
   }, [propertiesWithAccess, isAsesor, currentUser]);
 
-  const revisarCount = useMemo(() => reservedProperties.filter(p => (p.diasDesdeRevisar || 0) > 0 && (p.estado === 'VENDIDO' || p.estado === 'VENDIDO-P')).length, [reservedProperties]);
+  const revisarCount = useMemo(() => reservedProperties.filter(p => getDiasDesdeRevisar(p) > 0).length, [reservedProperties]);
   const reubicacionesCount = useMemo(() => reservedProperties.filter(p => (p.metodoCompra || '').toUpperCase().includes('REUBICA')).length, [reservedProperties]); // CONTADOR AGREGADO
 
   const filteredReservedProperties = useMemo(() => {
@@ -194,7 +206,7 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
 
     // FILTROS AGREGADOS (Incidencias vs Reubicaciones)
     if (showOnlyIncidents) {
-      props = props.filter(p => (p.diasDesdeRevisar || 0) > 0 && (p.estado === 'VENDIDO' || p.estado === 'VENDIDO-P'));
+      props = props.filter(p => getDiasDesdeRevisar(p) > 0);
     } else if (showOnlyReubicaciones) {
       props = props.filter(p => (p.metodoCompra || '').toUpperCase().includes('REUBICA'));
     }
@@ -513,6 +525,12 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
               </button>
             )}
 
+            {onRefresh && (
+              <button onClick={onRefresh} className="flex items-center px-4 py-2.5 rounded-lg text-sm font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm" title="Actualizar datos">
+                <RefreshCcw className="w-4 h-4 mr-2" /> Actualizar
+              </button>
+            )}
+
             {revisarCount > 0 && (
               <button onClick={() => { setViewMode('reservations'); setShowOnlyReubicaciones(false); setShowOnlyIncidents(!showOnlyIncidents); }} className={`flex items-center px-4 py-2.5 rounded-lg text-sm font-black uppercase tracking-wider transition-all shadow-sm ${showOnlyIncidents ? 'bg-red-700 text-white' : 'bg-red-600 text-white hover:bg-red-700'}`}>
                 <AlertTriangle className="w-4 h-4 mr-2" /> REVISAR {revisarCount}
@@ -645,12 +663,12 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                       {/* --- COLUMNA DE INCIDENCIAS (Condicionada a VENDIDO/VENDIDO-P) --- */}
                       <td className="px-4 py-3 whitespace-nowrap text-center">
                         {['VENDIDO', 'VENDIDO-P'].includes((prop.estado || '').toUpperCase()) ? (
-                          (prop.diasDesdeRevisar || 0) > 0 ? (
+                          getDiasDesdeRevisar(prop) > 0 ? (
                             <button
                               onClick={() => { setIncidentProperty(prop); setIncidentRetro(prop.retroAsesor || ''); setIncidentFechaResolucion((prop as any).fechaResolucion || ''); }}
                               className="px-3 py-1.5 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded-md text-[10px] font-black uppercase tracking-widest hover:bg-orange-200 transition-colors shadow-sm"
                             >
-                              REVISAR {prop.diasDesdeRevisar}
+                              REVISAR {getDiasDesdeRevisar(prop)}
                             </button>
                           ) : <span className="text-xs text-slate-400 font-bold">SIN INCIDENCIA</span>
                         ) : <span className="text-xs text-slate-300 font-medium">-</span>}
@@ -712,7 +730,7 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1">Días Revisar</label>
                   <div className="bg-indigo-50 dark:bg-indigo-900/20 p-3 rounded-xl border border-indigo-100 dark:border-indigo-800/50 text-sm font-black text-indigo-700 dark:text-indigo-400">
-                    {incidentProperty.diasDesdeRevisar}
+                    {getDiasDesdeRevisar(incidentProperty)}
                   </div>
                 </div>
               </div>
@@ -832,7 +850,35 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                   <span className="ml-3 text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Marcar si el trámite es con asesor externo</span>
                 </label>
 
-                <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                <div className="space-y-4">
+                  <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                    <h4 className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-2 mb-4">
+                      <CreditCard className="w-4 h-4" /> Información Bancaria / Broker <span className="text-[10px] text-slate-400 ml-1">(SI APLICA)</span>
+                    </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        <div>
+                          <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2">Banco *</label>
+                          <select required className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all uppercase" value={reservationForm.banco || ''} onChange={e => setReservationForm({ ...reservationForm, banco: e.target.value })}>
+                            <option value="">Seleccione Banco...</option>
+                            {catalogs.banco?.map(b => <option key={b} value={b}>{b}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2">Nombre del Broker *</label>
+                          <input type="text" required className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 uppercase font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="NOMBRE DEL BROKER" value={reservationForm.nombreBroker || ''} onChange={e => setReservationForm({ ...reservationForm, nombreBroker: e.target.value.toUpperCase() })} />
+                        </div>
+                        <div>
+                          <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2">Teléfono Broker *</label>
+                          <input type="text" required className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 uppercase font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="10 DÍGITOS" maxLength={10} value={reservationForm.telefonoBroker || ''} onChange={e => setReservationForm({ ...reservationForm, telefonoBroker: e.target.value.replace(/[^0-9]/g, '') })} />
+                        </div>
+                        <div>
+                          <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2">Correo Broker *</label>
+                          <input type="email" required className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="email@ejemplo.com" value={reservationForm.correoBroker || ''} onChange={e => setReservationForm({ ...reservationForm, correoBroker: e.target.value.toLowerCase() })} />
+                        </div>
+                      </div>
+                    </div>
+
+                  <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-3">
                     <h4 className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-2">
                       <FolderOpen className="w-4 h-4" /> Expediente Digital
@@ -853,10 +899,11 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                     )}
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {renderFileUpload('url_comprobante_apartado', `Comprobante de Apartado ${selectedProperty.dtuAvaluo === 'SIN DTU' ? '*' : '(Opcional)'}`)}
-                    {renderFileUpload('url_autorizacion_bancaria', `Autorización Bancaria ${['BANCARIO', 'COFINAVIT', 'INFO + BANCO'].includes(reservationForm.metodoCompra || '') ? '*' : '(Opcional)'}`)}
-                    {renderFileUpload('url_mail_fovissste', `Mail FOVISSSTE ${reservationForm.metodoCompra === 'FOVISSSTE TRADICIONAL' ? '*' : '(Opcional)'}`)}
-                    {renderFileUpload('url_solicitud_reubicacion', `Solicitud de Reubicación (Opcional)`)}
+                    {renderFileUpload('url_comprobante_apartado', 'Comprobante de Apartado (Opcional)')}
+                    {renderFileUpload('url_autorizacion_bancaria', 'Autorización Bancaria (Opcional)')}
+                    {renderFileUpload('url_mail_fovissste', 'Mail FOVISSSTE (Opcional)')}
+                    {renderFileUpload('url_solicitud_reubicacion', 'Solicitud de Reubicación (Opcional)')}
+                  </div>
                   </div>
                 </div>
 
