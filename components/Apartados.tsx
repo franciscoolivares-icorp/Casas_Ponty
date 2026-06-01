@@ -46,6 +46,11 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'precioLista', label: 'Precio Lista', visible: true },
   { id: 'descuento', label: 'Descuento', visible: true },
   { id: 'precioFinal', label: 'Precio Final', visible: true },
+  { id: 'fechaApartado', label: 'Fecha Apartado', visible: false },
+  { id: 'fechaVenta', label: 'Fecha Venta', visible: false },
+  { id: 'fechaEscritura', label: 'Fecha Escritura', visible: false },
+  { id: 'fechaDesde', label: 'Fecha Desde', visible: false },
+  { id: 'fechaResolucion', label: 'Fecha Resolución', visible: false },
 ];
 
 const STORAGE_KEY_COLS_APARTADOS = 'propertyMaster_apartados_cols_v2';
@@ -619,6 +624,21 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                           <span className={`px-2.5 py-1 rounded-md font-bold text-xs ${prop.dtuAvaluo === 'AVALUO CERRADO' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-400' : prop.dtuAvaluo === 'CON DTU' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}`}>
                             {String(prop[col.id] || '-')}
                           </span>
+                        ) : col.id === 'fechaResolucion' && prop[col.id] ? (
+                          (() => {
+                            const valStr = String(prop[col.id]).split('T')[0];
+                            const today = new Date();
+                            const todayStr = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+                            let colorClass = 'font-medium text-slate-700 dark:text-slate-300';
+                            if (valStr < todayStr) {
+                                colorClass = 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 px-2.5 py-1 rounded-md text-xs font-bold';
+                            } else if (valStr === todayStr) {
+                                colorClass = 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 px-2.5 py-1 rounded-md text-xs font-bold';
+                            }
+                            return <span className={colorClass}>{valStr}</span>;
+                          })()
+                        ) : ['fechaApartado', 'fechaVenta', 'fechaEscritura', 'fechaDesde'].includes(col.id as string) && prop[col.id] ? (
+                          <span className="font-medium text-slate-700 dark:text-slate-300">{String(prop[col.id]).split('T')[0]}</span>
                         ) : ['precioTerrExc', 'precioObrasAdicionales', 'precioLista', 'descuento', 'precioFinal', 'valorAvaluo'].includes(col.id as string)
                           ? <span className={`font-bold ${col.id === 'descuento' ? 'text-red-500 dark:text-red-400' : 'text-slate-900 dark:text-slate-200'}`}>{formatCurrency(prop[col.id] as number)}</span>
                           : String(prop[col.id] || '-')}
