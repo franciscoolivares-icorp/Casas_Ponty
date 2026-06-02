@@ -66,7 +66,7 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
 
   const propertiesWithAccess = useMemo(() => {
     if (isCoordinador) {
-       return properties.filter(p => desarrollosAsignados.includes(p.desarrollo || ''));
+      return properties.filter(p => desarrollosAsignados.includes(p.desarrollo || ''));
     }
     return properties;
   }, [properties, isCoordinador, desarrollosAsignados]);
@@ -581,9 +581,9 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
           <div className="flex items-center gap-2">
             {/* ETIQUETA ACTUALIZADA PARA REUBICACIONES */}
             <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${viewMode === 'catalog' ? 'bg-green-100 text-green-800 border border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800'
-                : (showOnlyIncidents ? 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-400'
-                  : (showOnlyReubicaciones ? 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400'
-                    : 'bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800'))
+              : (showOnlyIncidents ? 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-400'
+                : (showOnlyReubicaciones ? 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400'
+                  : 'bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800'))
               }`}>
               {viewMode === 'catalog' ? 'Catálogo Disponible' : (showOnlyIncidents ? 'Incidencias Pendientes' : (showOnlyReubicaciones ? 'Trámites de Reubicación' : (isAsesor ? 'Mis Clientes' : 'Inventario Apartado')))}
             </span>
@@ -631,9 +631,9 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                             const todayStr = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().split('T')[0];
                             let colorClass = 'font-medium text-slate-700 dark:text-slate-300';
                             if (valStr < todayStr) {
-                                colorClass = 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 px-2.5 py-1 rounded-md text-xs font-bold';
+                              colorClass = 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 px-2.5 py-1 rounded-md text-xs font-bold';
                             } else if (valStr === todayStr) {
-                                colorClass = 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 px-2.5 py-1 rounded-md text-xs font-bold';
+                              colorClass = 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 px-2.5 py-1 rounded-md text-xs font-bold';
                             }
                             return <span className={colorClass}>{valStr}</span>;
                           })()
@@ -875,55 +875,55 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                     <h4 className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-2 mb-4">
                       <CreditCard className="w-4 h-4" /> Información Bancaria / Broker <span className="text-[10px] text-slate-400 ml-1">(SI APLICA)</span>
                     </h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                        <div>
-                          <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2">Banco *</label>
-                          <select required className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all uppercase" value={reservationForm.banco || ''} onChange={e => setReservationForm({ ...reservationForm, banco: e.target.value })}>
-                            <option value="">Seleccione Banco...</option>
-                            {catalogs.banco?.map(b => <option key={b} value={b}>{b}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2">Nombre del Broker *</label>
-                          <input type="text" required className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 uppercase font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="NOMBRE DEL BROKER" value={reservationForm.nombreBroker || ''} onChange={e => setReservationForm({ ...reservationForm, nombreBroker: e.target.value.toUpperCase() })} />
-                        </div>
-                        <div>
-                          <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2">Teléfono Broker *</label>
-                          <input type="text" required className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 uppercase font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="10 DÍGITOS" maxLength={10} value={reservationForm.telefonoBroker || ''} onChange={e => setReservationForm({ ...reservationForm, telefonoBroker: e.target.value.replace(/[^0-9]/g, '') })} />
-                        </div>
-                        <div>
-                          <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2">Correo Broker *</label>
-                          <input type="email" required className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="email@ejemplo.com" value={reservationForm.correoBroker || ''} onChange={e => setReservationForm({ ...reservationForm, correoBroker: e.target.value.toLowerCase() })} />
-                        </div>
-                      </div>
-                    </div>
-
-                  <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-3">
-                    <h4 className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-2">
-                      <FolderOpen className="w-4 h-4" /> Expediente Digital
-                    </h4>
-                    {(isAdmin || isAuditor) && (
-                      <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
-                        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Revisión Docs:</span>
-                        <select
-                          value={reservationForm.documentos || ''}
-                          onChange={e => setReservationForm({ ...reservationForm, documentos: (e.target.value as any) || null })}
-                          className={`text-xs font-black uppercase tracking-wider rounded-md border-none p-1 focus:ring-0 cursor-pointer ${reservationForm.documentos === 'OK' ? 'text-green-700 dark:text-green-400 bg-transparent' : reservationForm.documentos === 'PARCIAL' ? 'text-amber-700 dark:text-amber-400 bg-transparent' : 'text-slate-600 dark:text-slate-300 bg-transparent'}`}
-                        >
-                          <option value="">EN REVISIÓN</option>
-                          <option value="PARCIAL">PARCIAL</option>
-                          <option value="OK">OK</option>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                      <div>
+                        <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2">Banco *</label>
+                        <select className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all uppercase" value={reservationForm.banco || ''} onChange={e => setReservationForm({ ...reservationForm, banco: e.target.value })}>
+                          <option value="">Seleccione Banco...</option>
+                          {catalogs.banco?.map(b => <option key={b} value={b}>{b}</option>)}
                         </select>
                       </div>
-                    )}
+                      <div>
+                        <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2">Nombre del Broker *</label>
+                        <input type="text" className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 uppercase font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="NOMBRE DEL BROKER" value={reservationForm.nombreBroker || ''} onChange={e => setReservationForm({ ...reservationForm, nombreBroker: e.target.value.toUpperCase() })} />
+                      </div>
+                      <div>
+                        <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2">Teléfono Broker *</label>
+                        <input type="text" className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 uppercase font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="10 DÍGITOS" maxLength={10} value={reservationForm.telefonoBroker || ''} onChange={e => setReservationForm({ ...reservationForm, telefonoBroker: e.target.value.replace(/[^0-9]/g, '') })} />
+                      </div>
+                      <div>
+                        <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2">Correo Broker *</label>
+                        <input type="email" className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="email@ejemplo.com" value={reservationForm.correoBroker || ''} onChange={e => setReservationForm({ ...reservationForm, correoBroker: e.target.value.toLowerCase() })} />
+                      </div>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {renderFileUpload('url_comprobante_apartado', 'Comprobante de Apartado (Opcional)')}
-                    {renderFileUpload('url_autorizacion_bancaria', 'Autorización Bancaria (Opcional)')}
-                    {renderFileUpload('url_mail_fovissste', 'Mail FOVISSSTE (Opcional)')}
-                    {renderFileUpload('url_solicitud_reubicacion', 'Solicitud de Reubicación (Opcional)')}
-                  </div>
+
+                  <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-3">
+                      <h4 className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-2">
+                        <FolderOpen className="w-4 h-4" /> Expediente Digital
+                      </h4>
+                      {(isAdmin || isAuditor) && (
+                        <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                          <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Revisión Docs:</span>
+                          <select
+                            value={reservationForm.documentos || ''}
+                            onChange={e => setReservationForm({ ...reservationForm, documentos: (e.target.value as any) || null })}
+                            className={`text-xs font-black uppercase tracking-wider rounded-md border-none p-1 focus:ring-0 cursor-pointer ${reservationForm.documentos === 'OK' ? 'text-green-700 dark:text-green-400 bg-transparent' : reservationForm.documentos === 'PARCIAL' ? 'text-amber-700 dark:text-amber-400 bg-transparent' : 'text-slate-600 dark:text-slate-300 bg-transparent'}`}
+                          >
+                            <option value="">EN REVISIÓN</option>
+                            <option value="PARCIAL">PARCIAL</option>
+                            <option value="OK">OK</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {renderFileUpload('url_comprobante_apartado', 'Comprobante de Apartado (Opcional)')}
+                      {renderFileUpload('url_autorizacion_bancaria', 'Autorización Bancaria (Opcional)')}
+                      {renderFileUpload('url_mail_fovissste', 'Mail FOVISSSTE (Opcional)')}
+                      {renderFileUpload('url_solicitud_reubicacion', 'Solicitud de Reubicación (Opcional)')}
+                    </div>
                   </div>
                 </div>
 
