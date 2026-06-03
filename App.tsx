@@ -589,7 +589,7 @@ Saludos,`;
                   </button>
                 )}
 
-                {!isDataLoader && !isCoordinador && (
+                {!isDataLoader && (
                   <button onClick={() => setActiveTab('test')} className={`${activeTab === 'test' ? 'border-indigo-500 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 hover:text-slate-700'} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold transition-colors`}>
                     <FlaskConical className="w-4 h-4 mr-2" /> <span className="hidden md:inline">Apartar</span>
                   </button>

@@ -59,7 +59,7 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
   const [viewMode, setViewMode] = useState<'catalog' | 'reservations'>('catalog');
 
   const isAdmin = currentUser?.tipo_usuario === 'ADMINISTRADOR' || currentUser?.es_admin;
-  const isAuditor = currentUser?.tipo_usuario === 'AUDITOR';
+  const isAuditor = currentUser?.tipo_usuario === 'AUDITOR' || currentUser?.tipo_usuario === 'COORDINADOR';
   const isAsesor = currentUser?.tipo_usuario === 'ASESOR';
   const isCoordinador = currentUser?.tipo_usuario === 'COORDINADOR';
   const desarrollosAsignados = currentUser?.desarrollos_asignados || [];
@@ -74,10 +74,12 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
 
   const getDiffDays = (dateStr?: string | null) => {
     if (!dateStr) return null;
-    const d = new Date(dateStr + 'T12:00:00');
-    if (isNaN(d.getTime())) return null;
+    const parts = dateStr.split('T')[0].split('-');
+    if (parts.length !== 3) return null;
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
     const today = new Date();
-    return Math.floor((today.getTime() - d.getTime()) / (1000 * 3600 * 24));
+    const t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return Math.round((t.getTime() - d.getTime()) / (1000 * 3600 * 24));
   };
   const getDiasDesdeRevisar = (p: Propiedad) => p.fechaDesde ? (getDiffDays(p.fechaDesde) || 0) + 1 : 0;
 
@@ -307,7 +309,11 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
       metodoCompra: reservationForm.metodoCompra, ek: reservationForm.ek, asesorExterno: reservationForm.asesorExterno,
       asesor: isAsesor ? currentUser.nombre : selectedProperty.asesor,
       documentos: reservationForm.documentos,
-      fechaApartado: selectedProperty.fechaApartado || new Date().toISOString().split('T')[0],
+      fechaApartado: reservationForm.fechaApartado || selectedProperty.fechaApartado || new Date().toISOString().split('T')[0],
+      fechaVenta: reservationForm.fechaVenta || null,
+      fechaEscritura: reservationForm.fechaEscritura || null,
+      fechaDesde: reservationForm.fechaDesde || null,
+      fechaResolucion: reservationForm.fechaResolucion || null,
       precioOperacion: selectedProperty.precioFinal,
       banco: isBanking ? reservationForm.banco : null, nombreBrokerBanco: isBanking ? reservationForm.nombreBroker.toUpperCase() : null,
       telefonoBrokerBanco: isBanking ? reservationForm.telefonoBroker : null, correoBrokerBanco: isBanking ? reservationForm.correoBroker : null,
@@ -422,30 +428,34 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                 </div>
                 <div className="flex gap-3">
                   <a href={url} target="_blank" rel="noreferrer" className="text-xs font-black text-indigo-600 hover:text-indigo-800 uppercase tracking-wider">Ver</a>
-                  <button type="button" onClick={() => {
-                    setReservationForm(prev => {
-                      const newArr = [...((prev as any)[field] as string[])];
-                      newArr.splice(index, 1);
-                      return { ...prev, [field]: newArr };
-                    });
-                  }} className="text-xs font-black text-red-600 hover:text-red-800 uppercase tracking-wider">X</button>
+                  {!isAuditor && (
+                    <button type="button" onClick={() => {
+                      setReservationForm(prev => {
+                        const newArr = [...((prev as any)[field] as string[])];
+                        newArr.splice(index, 1);
+                        return { ...prev, [field]: newArr };
+                      });
+                    }} className="text-xs font-black text-red-600 hover:text-red-800 uppercase tracking-wider">X</button>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        <div className="relative flex items-center justify-center w-full h-11 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg hover:bg-white dark:bg-slate-800 transition-colors cursor-pointer bg-white dark:bg-slate-800">
-          {isUploadingThis ? (
-            <span className="text-xs font-bold text-slate-500 animate-pulse">Subiendo...</span>
-          ) : (
-            <>
-              <UploadCloud className="w-4 h-4 text-indigo-500 mr-2" />
-              <span className="text-xs font-bold text-slate-600 dark:text-slate-400">Adjuntar PDF/Foto {hasFiles ? '(Otro)' : ''}</span>
-              <input type="file" multiple accept=".pdf,image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={(e) => handleFileUpload(e, field)} disabled={isUploadingThis} />
-            </>
-          )}
-        </div>
+        {!isAuditor && (
+          <div className="relative flex items-center justify-center w-full h-11 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg hover:bg-white dark:bg-slate-800 transition-colors cursor-pointer bg-white dark:bg-slate-800">
+            {isUploadingThis ? (
+              <span className="text-xs font-bold text-slate-500 animate-pulse">Subiendo...</span>
+            ) : (
+              <>
+                <UploadCloud className="w-4 h-4 text-indigo-500 mr-2" />
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-400">Adjuntar PDF/Foto {hasFiles ? '(Otro)' : ''}</span>
+                <input type="file" multiple accept=".pdf,image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={(e) => handleFileUpload(e, field)} disabled={isUploadingThis} />
+              </>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -600,7 +610,7 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-10">#</th>
                   {visibleColumns.map(col => <th key={col.id} className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">{col.label}</th>)}
-                  {!isAuditor && <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider sticky right-0 bg-slate-100 dark:bg-slate-900 shadow-[-4px_0_6px_-1px_rgb(0,0,0,0.05)] z-40 align-middle">Acción</th>}
+                  {(!isAuditor || viewMode === 'reservations') && <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider sticky right-0 bg-slate-100 dark:bg-slate-900 shadow-[-4px_0_6px_-1px_rgb(0,0,0,0.05)] z-40 align-middle">Acción</th>}
                 </tr>
               ) : (
                 <tr>
@@ -609,7 +619,7 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                   <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">Ubicación</th>
                   <th className="px-4 py-3 text-center text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">Docs</th>
                   <th className="px-4 py-3 text-center text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">Incidencias</th>
-                  {!isAuditor && <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider sticky right-0 bg-slate-100 dark:bg-slate-900 shadow-[-4px_0_6px_-1px_rgb(0,0,0,0.05)] z-40 align-middle">Acción</th>}
+                  {(!isAuditor || viewMode === 'reservations') && <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider sticky right-0 bg-slate-100 dark:bg-slate-900 shadow-[-4px_0_6px_-1px_rgb(0,0,0,0.05)] z-40 align-middle">Acción</th>}
                 </tr>
               )}
             </thead>
@@ -680,7 +690,6 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                         )}
                       </td>
 
-                      {/* --- COLUMNA DE INCIDENCIAS (Condicionada a VENDIDO/VENDIDO-P) --- */}
                       <td className="px-4 py-3 whitespace-nowrap text-center">
                         {['VENDIDO', 'VENDIDO-P'].includes((prop.estado || '').toUpperCase()) ? (
                           getDiasDesdeRevisar(prop) > 0 ? (
@@ -694,21 +703,18 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                         ) : <span className="text-xs text-slate-300 font-medium">-</span>}
                       </td>
 
-                      {/* --- COLUMNA DE ACCIÓN (Condicionada a APARTADO/PREVENTA) --- */}
-                      {!isAuditor && (
-                        <td className="px-4 py-2 whitespace-nowrap text-right sticky right-0 bg-white dark:bg-slate-800 transition-colors shadow-[-4px_0_6px_-1px_rgb(0,0,0,0.02)] align-middle z-10 group-hover:bg-amber-50 dark:group-hover:bg-slate-700/80">
-                          {['APARTADO', 'PREVENTA'].includes((prop.estado || '').toUpperCase()) ? (
-                            <button onClick={() => setActionMenuProp(prop)} className="inline-flex items-center px-4 py-1.5 border border-slate-200 dark:border-slate-600 text-xs font-bold rounded-lg text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all uppercase tracking-wider shadow-sm">
-                              MODIFICAR
-                            </button>
-                          ) : (
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">En Proceso</span>
-                          )}
-                        </td>
-                      )}
+                      <td className="px-4 py-2 whitespace-nowrap text-right sticky right-0 bg-white dark:bg-slate-800 transition-colors shadow-[-4px_0_6px_-1px_rgb(0,0,0,0.02)] align-middle z-10 group-hover:bg-amber-50 dark:group-hover:bg-slate-700/80">
+                        {['APARTADO', 'PREVENTA'].includes((prop.estado || '').toUpperCase()) ? (
+                          <button onClick={() => setActionMenuProp(prop)} className="inline-flex items-center px-4 py-1.5 border border-slate-200 dark:border-slate-600 text-xs font-bold rounded-lg text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all uppercase tracking-wider shadow-sm">
+                            MODIFICAR
+                          </button>
+                        ) : (
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">En Proceso</span>
+                        )}
+                      </td>
                     </tr>
                   );
-                }) : <tr><td colSpan={isAuditor ? 5 : 6} className="px-4 py-16 text-center text-slate-500 dark:text-slate-400"><Building2 className="w-8 h-8 mx-auto mb-3 opacity-20" /><p className="text-sm font-medium">{isAsesor ? "No tienes clientes apartados en este momento." : "No hay propiedades en esta vista."}</p></td></tr>
+                }) : <tr><td colSpan={visibleColumns.length + 2} className="px-4 py-16 text-center text-slate-500 dark:text-slate-400"><Building2 className="w-8 h-8 mx-auto mb-3 opacity-20" /><p className="text-sm font-medium">{isAsesor ? "No tienes clientes apartados en este momento." : "No hay propiedades en esta vista."}</p></td></tr>
               )}
             </tbody>
           </table>
@@ -716,7 +722,7 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
       </div>
 
       {/* --- MODAL DE ATENCIÓN DE INCIDENCIA --- */}
-      {incidentProperty && !isAuditor && (
+      {incidentProperty && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col transform transition-all scale-100">
 
@@ -760,7 +766,8 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                 <textarea
                   value={incidentRetro}
                   onChange={e => setIncidentRetro(e.target.value.toUpperCase())}
-                  className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-4 text-sm font-medium focus:ring-2 focus:ring-orange-500 outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white uppercase transition-all shadow-inner"
+                  disabled={isAuditor}
+                  className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-4 text-sm font-medium focus:ring-2 focus:ring-orange-500 outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white uppercase transition-all shadow-inner disabled:opacity-50"
                   rows={3}
                   placeholder="INGRESE RETROALIMENTACIÓN..."
                 />
@@ -774,7 +781,8 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                   type="date"
                   value={incidentFechaResolucion}
                   onChange={e => setIncidentFechaResolucion(e.target.value)}
-                  className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-4 text-sm font-medium focus:ring-2 focus:ring-orange-500 outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white transition-all shadow-inner"
+                  disabled={isAuditor}
+                  className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-4 text-sm font-medium focus:ring-2 focus:ring-orange-500 outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white transition-all shadow-inner disabled:opacity-50"
                 />
               </div>
 
@@ -782,16 +790,18 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
 
             <div className="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 flex justify-end gap-3 border-t border-slate-200 dark:border-slate-700 shrink-0">
               <button disabled={isProcessing} onClick={() => setIncidentProperty(null)} className="px-5 py-2.5 font-black text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors">Cancelar</button>
-              <button disabled={isProcessing} onClick={handleSaveIncident} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest flex items-center shadow-lg shadow-indigo-200 dark:shadow-none transition-transform active:scale-95 disabled:opacity-50">
-                {isProcessing ? 'Guardando...' : <><Save className="w-4 h-4 mr-2" /> Guardar</>}
-              </button>
+              {!isAuditor && (
+                <button disabled={isProcessing} onClick={handleSaveIncident} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest flex items-center shadow-lg shadow-indigo-200 dark:shadow-none transition-transform active:scale-95 disabled:opacity-50">
+                  {isProcessing ? 'Guardando...' : <><Save className="w-4 h-4 mr-2" /> Guardar</>}
+                </button>
+              )}
             </div>
           </div>
         </div>
       )}
 
       {/* --- MODAL INTERMEDIO DE ACCIÓN CANCELAR APARTADO --- */}
-      {actionMenuProp && !isAuditor && (
+      {actionMenuProp && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in zoom-in-95 duration-200">
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col p-6">
             <div className="text-center mb-6">
@@ -803,9 +813,11 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
               <button onClick={() => { handleSelectProperty(actionMenuProp, true); setActionMenuProp(null); }} className="w-full bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-400 font-bold py-3.5 rounded-xl transition-colors border border-indigo-200 dark:border-indigo-800">
                 Subir Documentos
               </button>
-              <button onClick={() => { setPropertyToRelease(actionMenuProp); setActionMenuProp(null); setPasswordError(''); setReleasePassword(''); }} className="w-full bg-red-50 hover:bg-red-100 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 font-bold py-3.5 rounded-xl transition-colors border border-red-200 dark:border-red-800">
-                Cancelar Apartado
-              </button>
+              {!isAuditor && (
+                <button onClick={() => { setPropertyToRelease(actionMenuProp); setActionMenuProp(null); setPasswordError(''); setReleasePassword(''); }} className="w-full bg-red-50 hover:bg-red-100 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 font-bold py-3.5 rounded-xl transition-colors border border-red-200 dark:border-red-800">
+                  Cancelar Apartado
+                </button>
+              )}
               <button onClick={() => setActionMenuProp(null)} className="mt-2 text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 uppercase tracking-widest">
                 Volver
               </button>
@@ -836,7 +848,7 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
       )}
 
       {/* --- MODAL DE APARTADO / SUBIDA DE ARCHIVOS --- */}
-      {selectedProperty && !isAuditor && (
+      {selectedProperty && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm transition-opacity" onClick={() => setSelectedProperty(null)}></div>
           <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-700">
@@ -859,14 +871,14 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
               <form onSubmit={handleReservationSubmit} className="space-y-6">
                 <div>
                   <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2"><User className="w-4 h-4 mr-2 text-slate-400" /> Nombre del Comprador *</label>
-                  <input type="text" required className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 uppercase font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="Escriba el nombre completo" value={reservationForm.nombreComprador} onChange={e => setReservationForm({ ...reservationForm, nombreComprador: e.target.value.toUpperCase() })} />
+                  <input type="text" required disabled={isAuditor} className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 uppercase font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all disabled:opacity-50" placeholder="Escriba el nombre completo" value={reservationForm.nombreComprador} onChange={e => setReservationForm({ ...reservationForm, nombreComprador: e.target.value.toUpperCase() })} />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                  <div><label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2"><CreditCard className="w-4 h-4 mr-2 text-slate-400" /> Método de Compra *</label><select required className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all" value={reservationForm.metodoCompra} onChange={e => setReservationForm({ ...reservationForm, metodoCompra: e.target.value })}><option value="">Seleccione...</option>{catalogs.metodoCompra?.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
-                  <div><label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2"><FileText className="w-4 h-4 mr-2 text-slate-400" /> EK (Opcional)</label><input type="text" className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="5 a 6 dígitos" maxLength={6} value={reservationForm.ek} onChange={e => setReservationForm({ ...reservationForm, ek: e.target.value.replace(/[^0-9]/g, '') })} /></div>
+                  <div><label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2"><CreditCard className="w-4 h-4 mr-2 text-slate-400" /> Método de Compra *</label><select required disabled={isAuditor} className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all disabled:opacity-50" value={reservationForm.metodoCompra} onChange={e => setReservationForm({ ...reservationForm, metodoCompra: e.target.value })}><option value="">Seleccione...</option>{catalogs.metodoCompra?.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
+                  <div><label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2"><FileText className="w-4 h-4 mr-2 text-slate-400" /> EK (Opcional)</label><input type="text" disabled={isAuditor} className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all disabled:opacity-50" placeholder="5 a 6 dígitos" maxLength={6} value={reservationForm.ek} onChange={e => setReservationForm({ ...reservationForm, ek: e.target.value.replace(/[^0-9]/g, '') })} /></div>
                 </div>
                 <label className="flex items-center p-3 border border-slate-200 dark:border-slate-700 rounded-xl cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                  <input type="checkbox" className="h-5 w-5 text-indigo-600 rounded border-slate-300 dark:border-slate-600 dark:bg-slate-700 focus:ring-indigo-500" checked={reservationForm.asesorExterno} onChange={e => setReservationForm({ ...reservationForm, asesorExterno: e.target.checked })} />
+                  <input type="checkbox" disabled={isAuditor} className="h-5 w-5 text-indigo-600 rounded border-slate-300 dark:border-slate-600 dark:bg-slate-700 focus:ring-indigo-500 disabled:opacity-50" checked={reservationForm.asesorExterno} onChange={e => setReservationForm({ ...reservationForm, asesorExterno: e.target.checked })} />
                   <span className="ml-3 text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Marcar si el trámite es con asesor externo</span>
                 </label>
 
@@ -878,22 +890,22 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                       <div>
                         <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2">Banco *</label>
-                        <select className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all uppercase" value={reservationForm.banco || ''} onChange={e => setReservationForm({ ...reservationForm, banco: e.target.value })}>
+                        <select disabled={isAuditor} className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all uppercase disabled:opacity-50" value={reservationForm.banco || ''} onChange={e => setReservationForm({ ...reservationForm, banco: e.target.value })}>
                           <option value="">Seleccione Banco...</option>
                           {catalogs.banco?.map(b => <option key={b} value={b}>{b}</option>)}
                         </select>
                       </div>
                       <div>
                         <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2">Nombre del Broker *</label>
-                        <input type="text" className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 uppercase font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="NOMBRE DEL BROKER" value={reservationForm.nombreBroker || ''} onChange={e => setReservationForm({ ...reservationForm, nombreBroker: e.target.value.toUpperCase() })} />
+                        <input type="text" disabled={isAuditor} className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 uppercase font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all disabled:opacity-50" placeholder="NOMBRE DEL BROKER" value={reservationForm.nombreBroker || ''} onChange={e => setReservationForm({ ...reservationForm, nombreBroker: e.target.value.toUpperCase() })} />
                       </div>
                       <div>
                         <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2">Teléfono Broker *</label>
-                        <input type="text" className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 uppercase font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="10 DÍGITOS" maxLength={10} value={reservationForm.telefonoBroker || ''} onChange={e => setReservationForm({ ...reservationForm, telefonoBroker: e.target.value.replace(/[^0-9]/g, '') })} />
+                        <input type="text" disabled={isAuditor} className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 uppercase font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all disabled:opacity-50" placeholder="10 DÍGITOS" maxLength={10} value={reservationForm.telefonoBroker || ''} onChange={e => setReservationForm({ ...reservationForm, telefonoBroker: e.target.value.replace(/[^0-9]/g, '') })} />
                       </div>
                       <div>
                         <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2">Correo Broker *</label>
-                        <input type="email" className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="email@ejemplo.com" value={reservationForm.correoBroker || ''} onChange={e => setReservationForm({ ...reservationForm, correoBroker: e.target.value.toLowerCase() })} />
+                        <input type="email" disabled={isAuditor} className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all disabled:opacity-50" placeholder="email@ejemplo.com" value={reservationForm.correoBroker || ''} onChange={e => setReservationForm({ ...reservationForm, correoBroker: e.target.value.toLowerCase() })} />
                       </div>
                     </div>
                   </div>
@@ -929,7 +941,9 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
 
                 <div className="mt-8 flex justify-end gap-3 pt-5 border-t border-slate-200 dark:border-slate-700">
                   <button type="button" className="px-6 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors uppercase tracking-wider" onClick={() => setSelectedProperty(null)}>Cancelar</button>
-                  <button type="submit" disabled={Object.values(isUploading).some(v => v)} className="px-6 py-2.5 text-xs font-bold text-white bg-indigo-600 rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none hover:bg-indigo-700 transition-all active:scale-95 uppercase tracking-wider flex items-center gap-2 disabled:opacity-50">Confirmar <ArrowRight className="w-4 h-4" /></button>
+                  {!isAuditor && (
+                    <button type="submit" disabled={Object.values(isUploading).some(v => v)} className="px-6 py-2.5 text-xs font-bold text-white bg-indigo-600 rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none hover:bg-indigo-700 transition-all active:scale-95 uppercase tracking-wider flex items-center gap-2 disabled:opacity-50">Confirmar <ArrowRight className="w-4 h-4" /></button>
+                  )}
                 </div>
               </form>
             </div>
@@ -938,7 +952,7 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
       )}
 
       {/* --- MODAL CANCELAR / LIBERAR (CON FIRMA) --- */}
-      {propertyToRelease && !isAuditor && (
+      {propertyToRelease && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 border border-slate-200 dark:border-slate-700">
             <div className="p-6 flex flex-col items-center text-center">

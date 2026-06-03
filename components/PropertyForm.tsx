@@ -112,11 +112,14 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState<Record<string, boolean>>({});
 
-  const today = new Date();
   const getDiffDays = (dateStr?: string | null) => {
     if (!dateStr) return null;
-    const d = new Date(dateStr + 'T12:00:00');
-    return Math.floor((today.getTime() - d.getTime()) / (1000 * 3600 * 24));
+    const parts = dateStr.split('T')[0].split('-');
+    if (parts.length !== 3) return null;
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    const today = new Date();
+    const t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return Math.round((t.getTime() - d.getTime()) / (1000 * 3600 * 24));
   };
 
   const diasApartado = getDiffDays(formData.fechaApartado) ?? 0;
@@ -721,7 +724,7 @@ export const PropertyForm: React.FC<PropertyFormProps> = ({
                   <FolderOpen className="w-5 h-5 text-indigo-500" /> Expediente Digital (Nube)
                 </h3>
 
-                {(currentUser?.tipo_usuario === 'ADMINISTRADOR' || currentUser?.es_admin || currentUser?.tipo_usuario === 'AUDITOR') && (
+                {(currentUser?.tipo_usuario === 'ADMINISTRADOR' || currentUser?.es_admin || currentUser?.tipo_usuario === 'AUDITOR' || currentUser?.tipo_usuario === 'COORDINADOR') && (
                   <div className="flex items-center gap-2 bg-white/50 dark:bg-slate-900/50 px-3 py-1.5 rounded-lg border border-indigo-100 dark:border-slate-600">
                     <span className="text-[10px] font-bold text-indigo-900/70 dark:text-indigo-300/70 uppercase tracking-wider">Revisión Docs:</span>
                     <InlineField isEditing={true} isViewing={isViewing} value={formData.documentos || ''} onChange={v => handleFieldChange('documentos', v || null)}>
