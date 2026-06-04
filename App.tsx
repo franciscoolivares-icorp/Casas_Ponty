@@ -363,15 +363,17 @@ Saludos,`;
         ];
 
         for (const campo of camposAuditar) {
-          const oldVal = String(oldProp[campo.key as keyof Propiedad] || '');
-          const newVal = String(updatedProperty[campo.key as keyof Propiedad] || '');
+          if (campo.key in updatedProperty) {
+            const oldVal = String(oldProp[campo.key as keyof Propiedad] || '');
+            const newVal = String(updatedProperty[campo.key as keyof Propiedad] || '');
 
-          if (oldVal !== newVal && !(oldVal === '' && newVal === 'null') && newVal !== 'undefined') {
-            await logMovimiento(
-              idPropiedad as string,
-              `CAMBIO DE ${campo.label.toUpperCase()}`,
-              `Pasó de "${oldVal || 'N/A'}" a "${newVal || 'N/A'}"`
-            );
+            if (oldVal !== newVal && !(oldVal === '' && newVal === 'null') && newVal !== 'undefined') {
+              await logMovimiento(
+                idPropiedad as string,
+                `CAMBIO DE ${campo.label.toUpperCase()}`,
+                `Pasó de "${oldVal || 'N/A'}" a "${newVal || 'N/A'}"`
+              );
+            }
           }
         }
       }
@@ -419,15 +421,17 @@ Saludos,`;
         ];
 
         for (const campo of camposAuditar) {
-          const oldVal = String(oldProp[campo.key as keyof Propiedad] || '');
-          const newVal = String(updatedProperty[campo.key as keyof Propiedad] || '');
+          if (campo.key in updatedProperty) {
+            const oldVal = String(oldProp[campo.key as keyof Propiedad] || '');
+            const newVal = String(updatedProperty[campo.key as keyof Propiedad] || '');
 
-          if (oldVal !== newVal && !(oldVal === '' && newVal === 'null')) {
-            await logMovimiento(
-              idPropiedad as string,
-              `CAMBIO DE ${campo.label.toUpperCase()}`,
-              `Pasó de "${oldVal || 'N/A'}" a "${newVal || 'N/A'}"`
-            );
+            if (oldVal !== newVal && !(oldVal === '' && newVal === 'null')) {
+              await logMovimiento(
+                idPropiedad as string,
+                `CAMBIO DE ${campo.label.toUpperCase()}`,
+                `Pasó de "${oldVal || 'N/A'}" a "${newVal || 'N/A'}"`
+              );
+            }
           }
         }
 
