@@ -192,21 +192,24 @@ function App() {
   }, [properties, currentUser]);
 
 
-  const notifyStatusUpdate = async (prop: Propiedad, oldEstatus: string, newEstatus: string) => {
+  const notifyStatusUpdate = async (prop: Propiedad, oldEstatus: string, newEstatus: string, oldProp?: Propiedad, notasExtra?: string) => {
     if (oldEstatus === newEstatus) return;
     
     // Helper para formatear
     const formatMiles = (num: number | undefined) => num ? '$' + num.toLocaleString('en-US') : '$0';
     
     // 1. Notificación al Asesor
-    const asesor = usuariosDB.find(u => u.nombre === prop.asesor);
+    const targetAsesor = (newEstatus === 'DISPONIBLE' && oldProp) ? oldProp.asesor : prop.asesor;
+    const targetComprador = (newEstatus === 'DISPONIBLE' && oldProp) ? oldProp.nombreComprador : prop.nombreComprador;
+
+    const asesor = usuariosDB.find(u => u.nombre === targetAsesor);
     if (asesor && asesor.correo) {
-      const asuntoAsesor = `Actualización de Estatus: ${prop.nombreComprador || 'S/N'} ${prop.desarrollo || ''}`;
-      const mensajeAsesor = `Hola ${prop.asesor},
+      const asuntoAsesor = `Actualización de Estatus: ${targetComprador || 'S/N'} ${prop.desarrollo || ''}`;
+      let mensajeAsesor = `Hola ${targetAsesor},
 
 Te notificamos que ha habido un cambio en el estatus de una de tus propiedades en proceso:
 
-Cliente: ${prop.nombreComprador || 'S/N'}
+Cliente: ${targetComprador || 'S/N'}
 Desarrollo: ${prop.desarrollo || ''}
 Modelo: ${prop.modelo || ''} ${prop.nivel || ''}
 Condominio: ${prop.condomino || ''}
@@ -216,11 +219,13 @@ Precio: ${formatMiles(prop.precioFinal)}
 
 ID Propiedad: ${prop.idPropiedad}
 Estatus Anterior: ${oldEstatus}
-NUEVO ESTATUS: ${newEstatus}
+NUEVO ESTATUS: ${newEstatus}`;
 
-Por favor, revisa el sistema para más detalles.
+      if (notasExtra) {
+          mensajeAsesor += `\n\nMotivo / Notas: ${notasExtra}`;
+      }
 
-Saludos,`;
+      mensajeAsesor += `\n\nPor favor, revisa el sistema para más detalles.\n\nSaludos,`;
       
       try {
         await emailjs.send('service_q6nzdzh', 'template_n4fo0xb', {
@@ -329,7 +334,8 @@ Saludos,`;
   const handleUpdatePropertyInline = async (updatedProperty: Partial<Propiedad>) => {
     console.log("🛠️ App.tsx: handleUpdatePropertyInline INICIADO", updatedProperty);
     try {
-      const { idPropiedad, ...restOfData } = updatedProperty;
+      const notasCancelacion = (updatedProperty as any)._notasCancelacion;
+      const { idPropiedad, _notasCancelacion, ...restOfData } = updatedProperty as any;
       const oldProp = properties.find(p => p.idPropiedad === idPropiedad);
       
       const dateFields: (keyof Propiedad)[] = ['fechaApartado', 'fechaVenta', 'fechaEscritura', 'fechaDesde', 'fechaResolucion'];
@@ -348,7 +354,7 @@ Saludos,`;
 
       if (oldProp) {
         if (restOfData.estado && oldProp.estado !== restOfData.estado) {
-           notifyStatusUpdate({ ...oldProp, ...restOfData } as Propiedad, oldProp.estado || '', restOfData.estado);
+           notifyStatusUpdate({ ...oldProp, ...restOfData } as Propiedad, oldProp.estado || '', restOfData.estado, oldProp, notasCancelacion);
         }
 
         // Log changes
@@ -389,7 +395,8 @@ Saludos,`;
   const handleUpdateProperty = async (updatedProperty: Partial<Propiedad>) => {
     console.log("🛠️ App.tsx: handleUpdateProperty INICIADO", updatedProperty);
     try {
-      const { idPropiedad, ...restOfData } = updatedProperty;
+      const notasCancelacion = (updatedProperty as any)._notasCancelacion;
+      const { idPropiedad, _notasCancelacion, ...restOfData } = updatedProperty as any;
       const oldProp = properties.find(p => p.idPropiedad === idPropiedad);
 
       const dateFields: (keyof Propiedad)[] = ['fechaApartado', 'fechaVenta', 'fechaEscritura', 'fechaDesde', 'fechaResolucion'];
@@ -408,7 +415,7 @@ Saludos,`;
 
       if (oldProp) {
         if (restOfData.estado && oldProp.estado !== restOfData.estado) {
-           notifyStatusUpdate({ ...oldProp, ...restOfData } as Propiedad, oldProp.estado || '', restOfData.estado);
+           notifyStatusUpdate({ ...oldProp, ...restOfData } as Propiedad, oldProp.estado || '', restOfData.estado, oldProp, notasCancelacion);
         }
 
         const camposAuditar = [
@@ -435,8 +442,10 @@ Saludos,`;
           }
         }
 
-        if (oldProp.estado !== updatedProperty.estado && updatedProperty.estado) {
-          await logMovimiento(idPropiedad as string, 'CAMBIO DE ESTATUS', `Pasó de ${oldProp.estado || 'N/A'} a ${updatedProperty.estado}`);
+        if (oldProp.estado !== restOfData.estado && restOfData.estado) {
+          let detalles = `Pasó de ${oldProp.estado || 'N/A'} a ${restOfData.estado}`;
+          if (notasCancelacion) detalles += ` | Motivo/Notas: ${notasCancelacion}`;
+          await logMovimiento(idPropiedad as string, 'CAMBIO DE ESTATUS', detalles);
         }
       }
       fetchProperties();

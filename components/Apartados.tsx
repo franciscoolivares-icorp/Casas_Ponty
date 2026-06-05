@@ -347,7 +347,8 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
         nombreComprador: null, banco: null, nombreBrokerBanco: null, telefonoBrokerBanco: null, correoBrokerBanco: null,
         ek: null, metodoCompra: null, metodoCompraAgrupador: null, titulacion: null, fechaDesde: null, asesorExterno: false,
         asesor: null, url_comprobante_apartado: null, url_autorizacion_bancaria: null, url_mail_fovissste: null, url_solicitud_reubicacion: null,
-        retroAsesor: null, fechaResolucion: null
+        retroAsesor: null, fechaResolucion: null,
+        _notasCancelacion: actionNotes.toUpperCase()
       } as Partial<Propiedad>);
 
       setPropertyToRelease(null); setActionNotes(''); setReleasePassword('');
@@ -879,8 +880,8 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                   <div>
-                    <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2"><Calendar className="w-4 h-4 mr-2 text-slate-400" /> Fecha Resolución (Opcional)</label>
-                    <input type="date" disabled={isAuditor} className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all disabled:opacity-50" value={reservationForm.fechaResolucion || ''} onChange={e => setReservationForm({ ...reservationForm, fechaResolucion: e.target.value })} />
+                    <label className="flex items-center text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-2"><Calendar className="w-4 h-4 mr-2 text-slate-400" /> Fecha Resolución *</label>
+                    <input type="date" required disabled={isAuditor} className="w-full text-sm border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-xl p-3 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all disabled:opacity-50" value={reservationForm.fechaResolucion || ''} onChange={e => setReservationForm({ ...reservationForm, fechaResolucion: e.target.value })} />
                   </div>
                 </div>
                 <label className="flex items-center p-3 border border-slate-200 dark:border-slate-700 rounded-xl cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors mt-2">
