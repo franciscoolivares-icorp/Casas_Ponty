@@ -254,11 +254,13 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
     if (!subiendoDocs) {
       setReservationForm({
         nombreComprador: '', metodoCompra: '', ek: '', banco: '', nombreBroker: '', telefonoBroker: '', correoBroker: '', asesorExterno: false,
-        url_comprobante_apartado: [], url_autorizacion_bancaria: [], url_mail_fovissste: [], url_solicitud_reubicacion: [], documentos: null
+        url_comprobante_apartado: [], url_autorizacion_bancaria: [], url_mail_fovissste: [], url_solicitud_reubicacion: [], documentos: null,
+        fechaResolucion: ''
       });
     } else {
       setReservationForm({
         nombreComprador: prop.nombreComprador || '', metodoCompra: prop.metodoCompra || '', ek: prop.ek || '', banco: prop.banco || '', nombreBroker: prop.nombreBrokerBanco || '', telefonoBroker: prop.telefonoBrokerBanco || '', correoBroker: prop.correoBrokerBanco || '', asesorExterno: prop.asesorExterno || false, documentos: prop.documentos || null,
+        fechaResolucion: prop.fechaResolucion || '',
         url_comprobante_apartado: Array.isArray(prop.url_comprobante_apartado) ? prop.url_comprobante_apartado : (prop.url_comprobante_apartado ? [prop.url_comprobante_apartado as unknown as string] : []),
         url_autorizacion_bancaria: Array.isArray(prop.url_autorizacion_bancaria) ? prop.url_autorizacion_bancaria : (prop.url_autorizacion_bancaria ? [prop.url_autorizacion_bancaria as unknown as string] : []),
         url_mail_fovissste: Array.isArray(prop.url_mail_fovissste) ? prop.url_mail_fovissste : (prop.url_mail_fovissste ? [prop.url_mail_fovissste as unknown as string] : []),
