@@ -143,8 +143,20 @@ function App() {
 
   const fetchProperties = async () => {
     const { data, error } = await supabase.from('propiedades').select('*').order('created_at', { ascending: false });
-    if (error) console.error('Error al cargar propiedades:', error.message);
-    else setProperties((data as Propiedad[]) || []);
+    if (error) {
+      console.error('Error al cargar propiedades:', error.message);
+    } else {
+      const sanitizedData = ((data as Propiedad[]) || []).map(p => {
+        const valor = Number(p.valorAvaluo) || 0;
+        if (valor > 0) {
+          p.dtuAvaluo = 'AVALUO CERRADO';
+        } else if (p.dtuAvaluo === 'AVALUO CERRADO') {
+          p.dtuAvaluo = 'SIN DTU';
+        }
+        return p;
+      });
+      setProperties(sanitizedData);
+    }
   };
 
   const fetchUsuarios = async () => {
