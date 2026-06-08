@@ -30,11 +30,14 @@ const isCoordinador = currentUser?.tipo_usuario === 'COORDINADOR';
      return propertiesWithAccess.filter(p => p.desarrollo === selectedDesarrollo);
   }, [propertiesWithAccess, selectedDesarrollo]);
 
-  const today = new Date();
   const getDiffDays = (dateStr?: string | null) => {
-      if (!dateStr) return null;
-      const d = new Date(dateStr + 'T12:00:00');
-      return Math.floor((today.getTime() - d.getTime()) / (1000 * 3600 * 24));
+    if (!dateStr) return null;
+    const parts = dateStr.split('T')[0].split('-');
+    if (parts.length !== 3) return null;
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.floor((today.getTime() - d.getTime()) / (1000 * 3600 * 24));
   };
 
   const totalPropiedades = filteredProperties.length;
