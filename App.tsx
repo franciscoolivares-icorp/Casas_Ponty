@@ -142,11 +142,31 @@ function App() {
   };
 
   const fetchProperties = async () => {
-    const { data, error } = await supabase.from('propiedades').select('*').order('created_at', { ascending: false });
-    if (error) {
-      console.error('Error al cargar propiedades:', error.message);
-    } else {
-      const sanitizedData = ((data as Propiedad[]) || []).map(p => {
+    try {
+      let allData: Propiedad[] = [];
+      let from = 0;
+      const step = 1000;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('propiedades')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .range(from, from + step - 1);
+
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          allData = [...allData, ...(data as Propiedad[])];
+          from += step;
+          if (data.length < step) hasMore = false;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      const sanitizedData = allData.map(p => {
         const valor = Number(p.valorAvaluo) || 0;
         if (valor > 0) {
           p.dtuAvaluo = 'AVALUO CERRADO';
@@ -156,6 +176,8 @@ function App() {
         return p;
       });
       setProperties(sanitizedData);
+    } catch (error: any) {
+      console.error('Error al cargar propiedades:', error.message);
     }
   };
 
