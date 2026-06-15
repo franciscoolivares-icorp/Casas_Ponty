@@ -35,7 +35,7 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'valorAvaluo', label: 'Valor Avalúo', visible: false },
   { id: 'calle', label: 'Calle', visible: true },
   { id: 'numeroExterior', label: 'Num Ext', visible: true },
-  { id: 'condomino', label: 'Condómino', visible: true },
+  { id: 'condomino', label: 'Condominio', visible: true },
   { id: 'edificio', label: 'Edificio', visible: true },
   { id: 'numeroInterior', label: 'Num Int', visible: true },
   { id: 'manzana', label: 'Manzana', visible: true },
@@ -96,7 +96,12 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
       const saved = localStorage.getItem(STORAGE_KEY_COLS_APARTADOS);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.length === INITIAL_COLUMNS.length) return parsed;
+        if (parsed.length === INITIAL_COLUMNS.length) {
+          return parsed.map((col: any) => ({
+            ...col,
+            label: INITIAL_COLUMNS.find(c => c.id === col.id)?.label || col.label
+          }));
+        }
       }
     } catch (e) { }
     return INITIAL_COLUMNS;

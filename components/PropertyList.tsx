@@ -164,7 +164,12 @@ export const PropertyList: React.FC<PropertyListProps> = ({
       const saved = localStorage.getItem(STORAGE_KEY_COLS);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.length === DEFAULT_COLUMNS.length) return parsed;
+        if (parsed.length === DEFAULT_COLUMNS.length) {
+          return parsed.map((col: any) => ({
+            ...col,
+            label: DEFAULT_COLUMNS.find(c => c.id === col.id)?.label || col.label
+          }));
+        }
       }
     } catch (e) {}
     return DEFAULT_COLUMNS;
