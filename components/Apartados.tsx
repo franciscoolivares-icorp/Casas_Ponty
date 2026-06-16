@@ -310,29 +310,31 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
     if (!selectedProperty) return;
     if (!reservationForm.nombreComprador || !reservationForm.metodoCompra) { return setFormError("Faltan datos obligatorios."); }
 
-    try {
-      // Verificar si la propiedad sigue disponible justo antes de apartar
-      const { data, error } = await supabase
-        .from('propiedades')
-        .select('estado')
-        .eq('idPropiedad', selectedProperty.idPropiedad)
-        .single();
+    if (selectedProperty.estado === Estado.DISPONIBLE) {
+      try {
+        // Verificar si la propiedad sigue disponible justo antes de apartar
+        const { data, error } = await supabase
+          .from('propiedades')
+          .select('estado')
+          .eq('idPropiedad', selectedProperty.idPropiedad)
+          .single();
 
-      if (error) {
-        setFormError("Error al verificar disponibilidad: " + error.message);
+        if (error) {
+          setFormError("Error al verificar disponibilidad: " + error.message);
+          return;
+        }
+
+        // Si el estado actual en la base de datos ya no es DISPONIBLE, mostramos alerta y abortamos
+        if (data?.estado !== Estado.DISPONIBLE) {
+          setUnavailablePopupProp(selectedProperty);
+          setSelectedProperty(null);
+          if (onRefresh) onRefresh();
+          return;
+        }
+      } catch (err: any) {
+        setFormError("Error de conexión al verificar disponibilidad.");
         return;
       }
-
-      // Si el estado actual en la base de datos ya no es DISPONIBLE, mostramos alerta y abortamos
-      if (data?.estado !== Estado.DISPONIBLE) {
-        setUnavailablePopupProp(selectedProperty);
-        setSelectedProperty(null);
-        if (onRefresh) onRefresh();
-        return;
-      }
-    } catch (err: any) {
-      setFormError("Error de conexión al verificar disponibilidad.");
-      return;
     }
 
     const isBanking = (catalogs.elementosHabilitarBanco || []).includes(reservationForm.metodoCompra);

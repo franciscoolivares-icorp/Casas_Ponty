@@ -385,6 +385,8 @@ Saludos,`;
       if (error) {
       showPopup({ type: 'alert', variant: 'danger', title: 'Error', message: 'Error al actualizar campo: ' + error.message });
     } else {
+      const updatedProp = { ...oldProp, ...restOfData } as Propiedad;
+      setProperties(prev => prev.map(p => p.idPropiedad === idPropiedad ? updatedProp : p));
 
       if (oldProp) {
         if (restOfData.estado && oldProp.estado !== restOfData.estado) {
@@ -446,6 +448,8 @@ Saludos,`;
       if (error) {
         showPopup({ type: 'alert', variant: 'danger', title: 'Error', message: 'Error al actualizar: ' + error.message });
       } else {
+      const updatedProp = { ...oldProp, ...restOfData } as Propiedad;
+      setProperties(prev => prev.map(p => p.idPropiedad === idPropiedad ? updatedProp : p));
 
       if (oldProp) {
         if (restOfData.estado && oldProp.estado !== restOfData.estado) {
@@ -483,7 +487,6 @@ Saludos,`;
         }
       }
       fetchProperties();
-      const updatedProp = { ...oldProp, ...restOfData } as Propiedad;
       setEditingProperty(updatedProp);
       localStorage.setItem('ponty_editing_property', JSON.stringify(updatedProp));
       showPopup({ type: 'alert', variant: 'success', title: 'Éxito', message: '¡Propiedad actualizada correctamente!' });
