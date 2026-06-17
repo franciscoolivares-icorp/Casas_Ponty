@@ -224,8 +224,11 @@ export const Apartados: React.FC<TestViewProps> = ({ properties, catalogs, onUpd
     }
 
     if (!reservationSearch) return props;
-    const lowerSearch = reservationSearch.toLowerCase();
-    return props.filter(p => Object.values(p).some(val => val !== null && val !== undefined && String(val).toLowerCase().includes(lowerSearch)));
+    const searchTerms = reservationSearch.toLowerCase().split(' ').filter(t => t.trim() !== '');
+    return props.filter(p => {
+      const fullText = Object.values(p).filter(val => val !== null && val !== undefined).map(val => String(val).toLowerCase()).join(' ');
+      return searchTerms.every(term => fullText.includes(term));
+    });
   }, [reservedProperties, reservationSearch, showOnlyIncidents, showOnlyReubicaciones]);
 
   useEffect(() => { setSelectedModelos([]); setSelectedNiveles([]); }, [selectedDesarrollo]);

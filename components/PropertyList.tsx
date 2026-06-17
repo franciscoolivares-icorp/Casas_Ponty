@@ -453,11 +453,14 @@ export const PropertyList: React.FC<PropertyListProps> = ({
   };
 
   const filteredProperties = useMemo(() => {
-    const term = normalizeText(searchTerm);
+    const searchTerms = normalizeText(searchTerm).split(' ').filter(t => t.trim() !== '');
     
     let result = properties.filter(prop => {
       if (esCoordinador && !desarrollosAsignados.includes(prop.desarrollo || '')) return false;
-      const matchesSearch = term === '' || Object.values(prop).some(v => normalizeText(String(v)).includes(term));
+      
+      const fullText = Object.values(prop).filter(v => v !== null && v !== undefined).map(v => normalizeText(String(v))).join(' ');
+      const matchesSearch = searchTerms.length === 0 || searchTerms.every(term => fullText.includes(term));
+      
       if (!matchesSearch) return false;
       const esEscriturado = prop.estado === 'ESCRITURADO' || prop.estado === 'ESCRITURADO-P';
       if (esEscriturado && !mostrarEscriturados) return false;

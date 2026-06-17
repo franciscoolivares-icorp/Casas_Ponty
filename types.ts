@@ -218,6 +218,7 @@ export interface Propiedad {
   diasDesdeRevisar?: number;
   observacionesDireccion?: string | null;
   fechaResolucion?: string | null;
+  correoAsesor?: string;
 }
 
 export type PopupConfig = {

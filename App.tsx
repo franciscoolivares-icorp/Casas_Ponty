@@ -551,6 +551,13 @@ Saludos,`;
     setIsAuthenticated(false); setCurrentUser(null); setActiveTab('home'); window.location.hash = '';
   };
 
+  const propertiesEnriched = useMemo(() => {
+    return properties.map(p => {
+      const asesorInfo = usuariosDB.find(u => u.nombre === p.asesor);
+      return { ...p, correoAsesor: asesorInfo?.correo || '' };
+    });
+  }, [properties, usuariosDB]);
+
   if (!isAuthenticated) {
     return <Login onLoginSuccess={(user) => {
       setCurrentUser(user);
@@ -734,12 +741,12 @@ Saludos,`;
 
       <div className="py-6 flex-1 overflow-auto">
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full">
-          {activeTab === 'home' && <Home properties={properties} onNavigateToApartados={() => setActiveTab('test')} />}
+          {activeTab === 'home' && <Home properties={propertiesEnriched} onNavigateToApartados={() => setActiveTab('test')} />}
           {activeTab === 'usuarios' && <Usuarios showPopup={showPopup} />}
 
           {activeTab === 'list' && (
             <PropertyList
-              properties={properties}
+              properties={propertiesEnriched}
               catalogs={catalogs}
               onView={startViewing}
               onEdit={startEditing}
@@ -771,8 +778,8 @@ Saludos,`;
 
           {activeTab === 'config' && <CatalogManager onCatalogChanged={fetchCatalogs} />}
           {activeTab === 'schema' && <SchemaTable />}
-          {activeTab === 'test' && <Apartados properties={properties} catalogs={catalogs} onUpdateProperty={handleUpdateProperty} currentUser={currentUser} onRefresh={fetchProperties} showPopup={showPopup} />}
-          {activeTab === 'reporter' && <ReporterView properties={properties} catalogs={catalogs} showPopup={showPopup} />}
+          {activeTab === 'test' && <Apartados properties={propertiesEnriched} catalogs={catalogs} onUpdateProperty={handleUpdateProperty} currentUser={currentUser} onRefresh={fetchProperties} showPopup={showPopup} />}
+          {activeTab === 'reporter' && <ReporterView properties={propertiesEnriched} catalogs={catalogs} showPopup={showPopup} />}
         </main>
       </div>
     </div>
