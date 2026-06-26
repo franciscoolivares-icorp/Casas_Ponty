@@ -153,6 +153,7 @@ function App() {
           .from('propiedades')
           .select('*')
           .order('created_at', { ascending: false })
+          .order('idPropiedad', { ascending: true })
           .range(from, from + step - 1);
 
         if (error) throw error;
